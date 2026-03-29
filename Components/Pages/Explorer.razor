@@ -45,10 +45,33 @@ else if (_gameState == GameState.CharSelect)
                 @foreach (var c in _characters)
                 {
                     var character = c;
-                    <div class="ex-char-card" @onclick="() => SelectCharacter(character)">
-                        <span class="ex-char-card-icon">@SvgIcon("user", 18)</span>
-                        <span class="ex-char-card-name">@character.Name.ToUpper()</span>
-                        @SvgIcon("arrow-left", 13, "ex-char-card-arrow")
+                    bool isConfirming = _deleteConfirmId == character.Id;
+                    <div class="ex-char-card @(isConfirming ? "ex-char-card-deleting" : "")"
+                         @onclick="() => { if (!isConfirming) SelectCharacter(character); }">
+                        @if (isConfirming)
+                        {
+                            <span class="ex-char-delete-prompt">DELETE @character.Name.ToUpper()?</span>
+                            <div class="ex-char-delete-btns" @onclick:stopPropagation>
+                                <button class="ex-btn ex-btn-danger ex-btn-sm" @onclick="() => DeleteCharacterAsync(character.Id)">
+                                    @SvgIcon("x", 11) YES
+                                </button>
+                                <button class="ex-btn ex-btn-sm" @onclick="() => _deleteConfirmId = null">
+                                    CANCEL
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="ex-char-card-icon">@SvgIcon("user", 18)</span>
+                            <span class="ex-char-card-name">@character.Name.ToUpper()</span>
+                            <span class="ex-char-card-stats">HP:@character.MaxHitPoints</span>
+                            @SvgIcon("arrow-left", 13, "ex-char-card-arrow")
+                            <button class="ex-char-delete-btn" @onclick:stopPropagation
+                                    @onclick="() => _deleteConfirmId = character.Id"
+                                    title="Delete champion">
+                                @SvgIcon("x", 11)
+                            </button>
+                        }
                     </div>
                 }
             </div>
@@ -81,6 +104,32 @@ else if (_gameState == GameState.CharCreate)
                placeholder="CHAMPION NAME..."
                @onkeydown="OnCreateKeyDown" />
 
+        <div class="ex-screen-subtitle" style="margin-top:12px;">DISTRIBUTE THY ATTRIBUTES</div>
+        <div class="ex-screen-subtitle" style="font-size:7px; color:var(--ex-stone);">
+            POINTS REMAINING: <span style="color:@(_statPointsRemaining == 0 ? "var(--ex-gold)" : "#e05050")">@_statPointsRemaining</span> / @TotalStatPoints
+        </div>
+
+        <div class="ex-stat-alloc">
+            @foreach (var stat in _statNames)
+            {
+                var s = stat;
+                var val = _statAlloc[s];
+                <div class="ex-stat-alloc-row">
+                    <span class="ex-stat-alloc-label">@s.ToUpper()</span>
+                    <button class="ex-stat-btn" @onclick="() => DecrementStat(s)" disabled="@(val <= 1)">−</button>
+                    <span class="ex-stat-alloc-val">@val</span>
+                    <button class="ex-stat-btn" @onclick="() => IncrementStat(s)" disabled="@(_statPointsRemaining <= 0)">+</button>
+                    <div class="ex-stat-alloc-bar">
+                        <div class="ex-stat-alloc-fill" style="width:@(val * 100 / 10)%"></div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="ex-stat-preview">
+            HIT POINTS: <span class="ex-stat-hp">@(_statAlloc["Health"] * 5 + _statAlloc["Toughness"])</span>
+        </div>
+
         @if (_createError != "")
         {
             <div class="ex-error">@SvgIcon("x", 11) @_createError</div>
@@ -88,7 +137,7 @@ else if (_gameState == GameState.CharCreate)
 
         <div class="ex-btn-row">
             <button class="ex-btn ex-btn-gold" @onclick="CreateCharacter"
-                    disabled="@(string.IsNullOrWhiteSpace(_newCharName))">
+                    disabled="@(string.IsNullOrWhiteSpace(_newCharName) || _statPointsRemaining != 0)">
                 @SvgIcon("sword", 13) CREATE
             </button>
             <button class="ex-btn" @onclick="() => _gameState = GameState.CharSelect">
@@ -98,7 +147,7 @@ else if (_gameState == GameState.CharCreate)
     </div>
 }
 
-@* ── Playing ── *@
+@* ── Playing (includes inline challenge & combat in right panel) ── *@
 else if (_gameState == GameState.Playing && _character != null)
 {
     <div class="explorer-container">
@@ -113,6 +162,9 @@ else if (_gameState == GameState.Playing && _character != null)
                 </button>
             </div>
             <span class="explorer-title">EXPLORER</span>
+            <span class="explorer-header-tiles">
+                @SvgIcon("compass", 11) @_tilesVisited TILES
+            </span>
             <span class="explorer-header-char">
                 @SvgIcon("user", 11) @_character.Name.ToUpper()
             </span>
@@ -121,21 +173,25 @@ else if (_gameState == GameState.Playing && _character != null)
         <!-- Main three-column area -->
         <div class="explorer-main">
 
-            <!-- Left: Stats + Inventory -->
+            <!-- Left: Stats + Inventory + Minimap -->
             <div class="explorer-left">
                 <div class="explorer-stats">
-                    <div class="explorer-panel-title">@SvgIcon("scroll", 10) STATS</div>
-                    <div class="explorer-stat-row">
-                        <span class="explorer-stat-label">NAME</span>
-                        <span class="explorer-stat-value">@_character.Name</span>
+                    <div class="explorer-panel-title">@SvgIcon("scroll", 10) @_character.Name.ToUpper()</div>
+                    <!-- HP bar -->
+                    <div class="explorer-stat-label" style="margin-bottom:4px;">HIT POINTS</div>
+                    <div class="ex-play-hp-bar">
+                        <div class="ex-play-hp-fill" style="width:@(Math.Max(0, _playerHp * 100 / Math.Max(1, _playerMaxHp)))%"></div>
                     </div>
-                    <div class="explorer-stat-row">
-                        <span class="explorer-stat-label">POSITION</span>
-                        <span class="explorer-stat-value">[@_playerX, @_playerY]</span>
-                    </div>
-                    <div class="explorer-stat-row">
-                        <span class="explorer-stat-label">TILES VISITED</span>
-                        <span class="explorer-stat-value">@_tilesVisited</span>
+                    <span class="ex-play-hp-text">@_playerHp / @_playerMaxHp</span>
+                    <!-- 2-column stat table -->
+                    <div class="explorer-stat-table">
+                        <div class="explorer-stat-row2"><span class="explorer-stat-label2">SPEED</span><span class="explorer-stat-val2">@_character.Speed</span></div>
+                        <div class="explorer-stat-row2"><span class="explorer-stat-label2">STRENGTH</span><span class="explorer-stat-val2">@_character.Strength</span></div>
+                        <div class="explorer-stat-row2"><span class="explorer-stat-label2">SMARTS</span><span class="explorer-stat-val2">@_character.Smarts</span></div>
+                        <div class="explorer-stat-row2"><span class="explorer-stat-label2">AGILITY</span><span class="explorer-stat-val2">@_character.Agility</span></div>
+                        <div class="explorer-stat-row2"><span class="explorer-stat-label2">TOUGHNESS</span><span class="explorer-stat-val2">@_character.Toughness</span></div>
+                        <div class="explorer-stat-row2"><span class="explorer-stat-label2">MAGIC</span><span class="explorer-stat-val2">@_character.Magic</span></div>
+                        <div class="explorer-stat-row2"><span class="explorer-stat-label2">HEALTH</span><span class="explorer-stat-val2">@_character.Health</span></div>
                     </div>
                 </div>
 
@@ -145,14 +201,40 @@ else if (_gameState == GameState.Playing && _character != null)
                         @for (int i = 0; i < 10; i++)
                         {
                             var item = i < _inventory.Count ? _inventory[i] : null;
-                            <div class="inv-slot @(item != null ? "inv-slot-filled" : "")"
-                                 title="@(item?.Name ?? "Empty")">
+                            var isConsumable = !_activeCombat && !_activeChallenge && item?.Name == "Healing Potion";
+                            <div class="inv-slot @(item != null ? "inv-slot-filled" : "") @(isConsumable ? "inv-slot-usable" : "")"
+                                 title="@(isConsumable ? "Click to use — " + GetItemTooltip(item) : GetItemTooltip(item))"
+                                 @onclick="() => { if (isConsumable && item != null) UseItemOutOfCombat(item); }">
                                 @if (item != null)
                                 {
                                     @SvgIcon(item.Icon, 18)
                                 }
                             </div>
                         }
+                    </div>
+                </div>
+
+                <!-- Minimap -->
+                <div class="explorer-minimap">
+                    <div class="explorer-panel-title">@SvgIcon("compass", 10) MAP</div>
+                    <div class="minimap-canvas">
+                        <div class="minimap-grid" style="grid-template-columns:repeat(@MinimapSize, 5px); grid-template-rows:repeat(@MinimapSize, 5px);">
+                            @for (int my = 0; my < MinimapSize; my++)
+                            {
+                                @for (int mx = 0; mx < MinimapSize; mx++)
+                                {
+                                    var worldX = _playerX - MinimapSize / 2 + mx;
+                                    var worldY = _playerY - MinimapSize / 2 + my;
+                                    var isPlayerMm = (worldX == _playerX && worldY == _playerY);
+                                    var mmTile = GetDisplayTile(worldX, worldY);
+                                    var mmClass = isPlayerMm ? "mm-player" :
+                                        (mmTile?.Visited == true ? $"mm-{mmTile.Type.ToString().ToLower()}" :
+                                         (mmTile?.Type == TileType.Water ? "mm-water-fog" :
+                                          (mmTile?.Type == TileType.Mountain ? "mm-mountain-fog" : "mm-empty")));
+                                    <div class="mm-cell @mmClass"></div>
+                                }
+                            }
+                        </div>
                     </div>
                 </div>
             </div>
@@ -176,16 +258,27 @@ else if (_gameState == GameState.Playing && _character != null)
                                  @onclick="() => OnTileClickAsync(tx, ty)">
                                 @if (isPlayer)
                                 {
-                                    @SvgIcon("compass", 20)
+                                    @TileIconSvg(GetDisplayTile(_playerX, _playerY)?.Type ?? TileType.Grassland)
                                 }
                                 else if (tile?.Visited == true)
                                 {
                                     @TileIconSvg(tile.Type)
+                                    @if (tile.HasChallenge && !tile.ChallengeCleared)
+                                    {
+                                        <span class="tile-challenge-mark @(tile.RetreatedFrom ? "tile-challenge-retreated" : "")">
+                                            @ChallengeTypeIcon(tile.Challenge?.Type)
+                                        </span>
+                                    }
                                 }
                                 else if (tile?.Revealed == true)
                                 {
-                                    <span class="tile-fog-icon">@TileIconSvg(tile.Type)</span>
-                                    <div class="tile-fog-overlay"></div>
+                                    @TileIconSvg(tile.Type)
+                                    @if (tile.HasChallenge && !tile.ChallengeCleared && tile.RetreatedFrom)
+                                    {
+                                        <span class="tile-challenge-mark tile-challenge-retreated">
+                                            @ChallengeTypeIcon(tile.Challenge?.Type)
+                                        </span>
+                                    }
                                 }
                                 else
                                 {
@@ -198,27 +291,210 @@ else if (_gameState == GameState.Playing && _character != null)
                 <div class="map-coords">[@_playerX, @_playerY]</div>
             </div>
 
-            <!-- Right: Current Location -->
+            <!-- Right: Location / Challenge / Combat panel -->
             <div class="explorer-location">
-                <div class="explorer-panel-title">@SvgIcon("scroll", 10) LOCATION</div>
-                @{
-                    var curTile = GetDisplayTile(_playerX, _playerY);
-                    var curType = curTile?.Type ?? TileType.Grassland;
-                }
-                <div class="location-type-label">
-                    @TileIconSvg(curType) @curType.ToString().ToUpper()
-                </div>
-                <div class="location-desc">@TileDescription(curType)</div>
+                @if (_activeCombat && _currentEnemy != null)
+                {
+                    <!-- ═══ COMBAT in right panel ═══ -->
+                    <div class="explorer-panel-title">@SvgIcon("swords", 10) COMBAT</div>
 
-                <div class="location-actions">
-                    <div class="explorer-panel-title">@SvgIcon("swords", 10) ACTIONS</div>
-                    <div class="location-hint">
-                        Click an adjacent tile to move there.
-                        <br /><br />
-                        Cliffs are passable but treacherous.
-                        Water cannot be crossed.
+                    <div class="rp-combat-enemy">
+                        <span class="rp-combat-icon">@_currentEnemy.Icon</span>
+                        <span class="rp-combat-name">@_currentEnemy.Name.ToUpper()</span>
                     </div>
-                </div>
+                    <div class="rp-combat-hp-row">
+                        <span class="rp-combat-hp-label">ENEMY</span>
+                        <div class="combat-hp-bar"><div class="combat-hp-fill combat-hp-enemy" style="width:@(Math.Max(0, _currentEnemy.Hp * 100 / _currentEnemy.MaxHp))%"></div></div>
+                        <span class="rp-combat-hp-num">@_currentEnemy.Hp/@_currentEnemy.MaxHp</span>
+                    </div>
+                    <div class="rp-combat-hp-row">
+                        <span class="rp-combat-hp-label">YOU</span>
+                        <div class="combat-hp-bar"><div class="combat-hp-fill" style="width:@(Math.Max(0, _playerHp * 100 / Math.Max(1, _playerMaxHp)))%"></div></div>
+                        <span class="rp-combat-hp-num">@_playerHp/@_playerMaxHp</span>
+                    </div>
+
+                    <div class="rp-combat-log">
+                        @foreach (var msg in _combatLog.Take(5))
+                        {
+                            <div class="rp-combat-log-entry">@msg</div>
+                        }
+                    </div>
+
+                    @if (_combatOver)
+                    {
+                        <div class="rp-combat-result">@_combatResultMsg</div>
+                        @if (_playerDead)
+                        {
+                            <div class="rp-death-score">SCORE: @_tilesVisited TILES EXPLORED</div>
+                            <button class="ex-btn ex-btn-danger ex-btn-full" @onclick="EndCombatDeath">GAME OVER</button>
+                        }
+                        else
+                        {
+                            <button class="ex-btn ex-btn-gold ex-btn-full" @onclick="EndCombat">CONTINUE</button>
+                        }
+                    }
+                    else
+                    {
+                        <div class="rp-combat-actions">
+                            <button class="ex-btn ex-btn-gold ex-btn-full" @onclick='() => PlayerAttack("melee")'>
+                                @SvgIcon("sword", 12) MELEE (@GetMeleeWeaponName())
+                            </button>
+                            @if (HasBow())
+                            {
+                                <button class="ex-btn ex-btn-gold ex-btn-full" @onclick='() => PlayerAttack("ranged")'>
+                                    @SvgIcon("bow", 12) RANGED (Bow)
+                                </button>
+                            }
+                            @if (HasHealingPotion())
+                            {
+                                <button class="ex-btn ex-btn-heal ex-btn-full" @onclick="UseHealingPotion">
+                                    @SvgIcon("potion", 12) HEAL (+5 HP)
+                                </button>
+                            }
+                            <button class="ex-btn ex-btn-full" @onclick="AttemptFlee">
+                                @SvgIcon("arrow-left", 12) FLEE
+                            </button>
+                        </div>
+                    }
+                }
+                else if (_activeChallenge && _currentChallenge != null)
+                {
+                    <!-- ═══ CHALLENGE in right panel ═══ -->
+                    <div class="explorer-panel-title">@SvgIcon("swords", 10) CHALLENGE</div>
+
+                    @if (_isExitChallenge)
+                    {
+                        <div class="rp-trapped-banner">
+                            @SvgIcon("x", 11) TRAPPED — overcome this to move
+                        </div>
+                    }
+
+                    <div class="rp-challenge-header">
+                        <span class="rp-challenge-icon">@_currentChallenge.Icon</span>
+                        <span class="rp-challenge-title">@_currentChallenge.Title</span>
+                    </div>
+                    <div class="rp-challenge-desc">@_currentChallenge.Description</div>
+
+                    @if (_challengeResolved)
+                    {
+                        <div class="rp-challenge-result @(_challengeSuccess ? "challenge-success" : "challenge-fail")">
+                            @_challengeResultMsg
+                        </div>
+                        <button class="ex-btn ex-btn-gold ex-btn-full" @onclick="EndChallenge">CONTINUE</button>
+                    }
+                    else if (_currentChallenge.Type == ChallengeType.StatCheck)
+                    {
+                        <div class="rp-challenge-info">
+                            Requires: @_currentChallenge.StatName!.ToUpper() (yours: @GetCharStat(_character, _currentChallenge.StatName!))
+                        </div>
+                        <button class="ex-btn ex-btn-gold ex-btn-full" @onclick="AttemptStatCheck">
+                            @SvgIcon("target", 12) ATTEMPT
+                        </button>
+                        @if (!_isExitChallenge && (_currentChallenge?.AllowRetreat ?? true))
+                        {
+                            <button class="ex-btn ex-btn-full" @onclick="RetreatFromChallenge">
+                                @SvgIcon("arrow-left", 12) RETREAT
+                            </button>
+                        }
+                    }
+                    else if (_currentChallenge.Type == ChallengeType.Riddle)
+                    {
+                        <div class="rp-challenge-info">
+                            Answer the riddle, or roll Smarts (@GetCharStat(_character!, "Smarts")) vs DC @(_currentChallenge.Difficulty + 10)
+                        </div>
+                        <input class="ex-input" style="margin:8px 0;"
+                               @bind="_riddleAnswer"
+                               @bind:event="oninput"
+                               placeholder="ENTER ANSWER..."
+                               @onkeydown="OnRiddleKeyDown" />
+                        <button class="ex-btn ex-btn-gold ex-btn-full" @onclick="AttemptRiddle">
+                            @SvgIcon("scroll", 12) ANSWER
+                        </button>
+                        <button class="ex-btn ex-btn-full" @onclick="AttemptRiddleStatRoll">
+                            @SvgIcon("target", 12) ROLL WIT (SMARTS)
+                        </button>
+                        @if (!_isExitChallenge && (_currentChallenge?.AllowRetreat ?? true))
+                        {
+                            <button class="ex-btn ex-btn-full" @onclick="RetreatFromChallenge">
+                                @SvgIcon("arrow-left", 12) RETREAT
+                            </button>
+                        }
+                    }
+                    else if (_currentChallenge.Type == ChallengeType.ItemRequired)
+                    {
+                        <div class="rp-challenge-info">
+                            You need: @_currentChallenge.RequiredItemName
+                        </div>
+                        <button class="ex-btn ex-btn-gold ex-btn-full" @onclick="AttemptItemChallenge">
+                            @SvgIcon("shield", 12) OFFER ITEM
+                        </button>
+                        @if (!_isExitChallenge && (_currentChallenge?.AllowRetreat ?? true))
+                        {
+                            <button class="ex-btn ex-btn-full" @onclick="RetreatFromChallenge">
+                                @SvgIcon("arrow-left", 12) RETREAT
+                            </button>
+                        }
+                    }
+                    else if (_currentChallenge.Type == ChallengeType.Combat)
+                    {
+                        <button class="ex-btn ex-btn-gold ex-btn-full" @onclick="StartCombatChallenge">
+                            @SvgIcon("swords", 12) FIGHT
+                        </button>
+                        @if (!_isExitChallenge && (_currentChallenge?.AllowRetreat ?? true))
+                        {
+                            <button class="ex-btn ex-btn-full" @onclick="RetreatFromChallenge">
+                                @SvgIcon("arrow-left", 12) RETREAT
+                            </button>
+                        }
+                    }
+                }
+                else
+                {
+                    <!-- ═══ Normal location info ═══ -->
+                    <div class="explorer-panel-title">@SvgIcon("scroll", 10) LOCATION</div>
+                    <div class="location-type-label">
+                        @TileIconSvg(CurrentTileType) @CurrentTileType.ToString().ToUpper()
+                    </div>
+                    <div class="location-desc">@TileDescription(CurrentTileType)</div>
+
+                    @if (_activeExitChallenge && CurrentTile?.ExitChallenge != null && !CurrentTile.ExitChallengeCleared)
+                    {
+                        <div class="location-trapped-notice">
+                            @SvgIcon("x", 12) TRAPPED — You cannot leave this tile!
+                        </div>
+                        <div class="location-trapped-challenge">
+                            <span class="location-trapped-icon">@CurrentTile.ExitChallenge.Icon</span>
+                            @CurrentTile.ExitChallenge.Title
+                        </div>
+                        <div class="location-trapped-desc">@CurrentTile.ExitChallenge.Description</div>
+                        <button class="ex-btn ex-btn-danger ex-btn-full" @onclick="TriggerExitChallenge">
+                            @SvgIcon("swords", 12) ATTEMPT ESCAPE
+                        </button>
+                    }
+                    else if (CurrentTile?.HasChallenge == true && !CurrentTile.ChallengeCleared)
+                    {
+                        <div class="location-challenge-notice">
+                            @SvgIcon("swords", 12) A challenge awaits here!
+                        </div>
+                    }
+
+                    <div class="location-actions">
+                        <div class="explorer-panel-title">@SvgIcon("swords", 10) ACTIONS</div>
+                        @if (_playerHp < _playerMaxHp)
+                        {
+                            var restHeal = Math.Max(1, (_playerMaxHp - _playerHp) / 2);
+                            <button class="ex-btn ex-btn-rest ex-btn-full" @onclick="Rest">
+                                @SvgIcon("moon", 12) REST (+@restHeal HP)
+                            </button>
+                        }
+                        <div class="location-hint">
+                            Click an adjacent tile to move there.
+                            <br /><br />
+                            Cliffs and Mountains must be navigated.
+                            Water cannot be crossed.
+                        </div>
+                    </div>
+                }
             </div>
         </div>
 
@@ -272,7 +548,7 @@ else if (_gameState == GameState.Playing && _character != null)
     private enum GameState { Loading, NoUser, CharSelect, CharCreate, Playing }
 
     // ── Tile system ──────────────────────────────────────────────────────────
-    private enum TileType { Forest, Grassland, Cliff, Water }
+    private enum TileType { Forest, Grassland, Cliff, Water, Mountain }
 
     private class MapTile
     {
@@ -281,27 +557,81 @@ else if (_gameState == GameState.Playing && _character != null)
         public TileType Type { get; set; }
         public bool Visited { get; set; }
         public bool Revealed { get; set; }
+        public bool HasChallenge { get; set; }
+        public bool ChallengeCleared { get; set; }
+        public bool RetreatedFrom { get; set; }
+        public Challenge? Challenge { get; set; }
+        // Exit challenges block movement OUT of the tile
+        public bool HasExitChallenge { get; set; }
+        public bool ExitChallengeCleared { get; set; }
+        public Challenge? ExitChallenge { get; set; }
     }
 
     // ── Inventory ────────────────────────────────────────────────────────────
-    private record InventoryItem(string Name, string Icon);
+    private record InventoryItem(string Name, string Icon, int Damage = 0, string Tooltip = "");
+
+    // ── Challenge system ─────────────────────────────────────────────────────
+    private enum ChallengeType { Combat, StatCheck, Riddle, ItemRequired }
+
+    private class Challenge
+    {
+        public ChallengeType Type { get; set; }
+        public string Title { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Icon { get; set; } = "⚡";
+        public string? StatName { get; set; }
+        public int Difficulty { get; set; }
+        public string? RiddleAnswer { get; set; }
+        public string? RequiredItemName { get; set; }
+        public string? EnemyType { get; set; }
+        public bool AllowRetreat { get; set; } = true;
+    }
+
+    // ── Enemy system ─────────────────────────────────────────────────────────
+    private class Enemy
+    {
+        public string Name { get; set; } = "";
+        public string Icon { get; set; } = "👹";
+        public int Hp { get; set; }
+        public int MaxHp { get; set; }
+        public int AttackStat { get; set; }
+        public int DefenseStat { get; set; }
+        public int Damage { get; set; }
+        public int Armor { get; set; }
+        public string AttackType { get; set; } = "melee";
+        public string? LootName { get; set; }
+        public string? LootIcon { get; set; }
+        public int LootDamage { get; set; }
+        public string LootTooltip { get; set; } = "";
+    }
 
     // ── Terrain generation weights ───────────────────────────────────────────
     private static readonly Dictionary<TileType, float> BaseWeights = new()
     {
-        [TileType.Forest]    = 35f,
-        [TileType.Grassland] = 35f,
-        [TileType.Cliff]     = 15f,
-        [TileType.Water]     = 15f,
+        [TileType.Forest]    = 28f,
+        [TileType.Grassland] = 33f,
+        [TileType.Cliff]     = 12f,
+        [TileType.Water]     = 17f,
+        [TileType.Mountain]  = 10f,
     };
 
     private static readonly Dictionary<TileType, float> ClusterBoost = new()
     {
-        [TileType.Forest]    = 18f,
-        [TileType.Grassland] = 14f,
-        [TileType.Cliff]     = 22f,
-        [TileType.Water]     = 28f,
+        [TileType.Forest]    = 20f,
+        [TileType.Grassland] = 35f,
+        [TileType.Cliff]     = 8f,
+        [TileType.Water]     = 20f,
+        [TileType.Mountain]  = 24f,
     };
+
+    // ── Stat allocation ──────────────────────────────────────────────────────
+    private const int TotalStatPoints = 18;
+    private static readonly string[] _statNames = ["Speed", "Strength", "Smarts", "Agility", "Toughness", "Magic", "Health"];
+    private Dictionary<string, int> _statAlloc = _statNames.ToDictionary(s => s, _ => 1);
+    private int _statPointsRemaining => TotalStatPoints - _statAlloc.Values.Sum();
+
+    // ── Minimap ──────────────────────────────────────────────────────────────
+    private const int MinimapSize = 31; // always square
 
     // ── State fields ─────────────────────────────────────────────────────────
     private GameState _gameState = GameState.Loading;
@@ -323,6 +653,41 @@ else if (_gameState == GameState.Playing && _character != null)
     private List<string> _statusHistory = [];
     private bool _statusExpanded = false;
 
+    private int _playerHp;
+    private int _playerMaxHp;
+
+    // Combat state (inline in right panel)
+    private bool _activeCombat = false;
+    private Enemy? _currentEnemy;
+    private List<string> _combatLog = [];
+    private bool _combatOver = false;
+    private string _combatResultMsg = "";
+    private bool _combatWon = false;
+    private bool _playerDead = false;
+
+    // Challenge state (inline in right panel)
+    private bool _activeChallenge = false;
+    private Challenge? _currentChallenge;
+    private bool _challengeResolved = false;
+    private bool _challengeSuccess = false;
+    private string _challengeResultMsg = "";
+    private string _riddleAnswer = "";
+    private (int, int)? _pendingMoveTo;
+    // Exit challenge state — triggers after landing on a tile, locks all movement
+    private bool _activeExitChallenge = false;
+    private bool _isExitChallenge = false;
+    // Riddle deduplication — titles used this playthrough
+    private HashSet<string> _usedRiddleTitles = [];
+    // Character delete confirm
+    private int? _deleteConfirmId = null;
+
+    // Movement locked when challenge/combat active or trapped by exit challenge
+    private bool MovementLocked => _activeChallenge || _activeCombat || _activeExitChallenge;
+
+    // Computed tile properties for Razor template
+    private MapTile? CurrentTile => GetDisplayTile(_playerX, _playerY);
+    private TileType CurrentTileType => CurrentTile?.Type ?? TileType.Grassland;
+
     // ── Lifecycle ────────────────────────────────────────────────────────────
     protected override void OnInitialized()
     {
@@ -335,13 +700,9 @@ else if (_gameState == GameState.Playing && _character != null)
         _initialized = true;
 
         if (UserSession.CurrentUser == null)
-        {
             _gameState = GameState.NoUser;
-        }
         else
-        {
             await LoadCharacters();
-        }
         StateHasChanged();
     }
 
@@ -365,31 +726,42 @@ else if (_gameState == GameState.Playing && _character != null)
         _gameState = GameState.CharSelect;
     }
 
-    public void Dispose()
-    {
-        UserSession.OnChange -= HandleUserChanged;
-    }
+    public void Dispose() => UserSession.OnChange -= HandleUserChanged;
 
     // ── Character management ─────────────────────────────────────────────────
     private void ShowCharCreate()
     {
         _newCharName = "";
         _createError = "";
+        _statAlloc = _statNames.ToDictionary(s => s, _ => 1);
         _gameState = GameState.CharCreate;
+    }
+
+    private void IncrementStat(string stat)
+    {
+        if (_statPointsRemaining > 0 && _statAlloc[stat] < 10) _statAlloc[stat]++;
+    }
+
+    private void DecrementStat(string stat)
+    {
+        if (_statAlloc[stat] > 1) _statAlloc[stat]--;
     }
 
     private async Task CreateCharacter()
     {
         var name = _newCharName.Trim();
         if (string.IsNullOrWhiteSpace(name)) return;
-
+        if (_statPointsRemaining != 0) { _createError = "DISTRIBUTE ALL POINTS"; return; }
         if (_characters.Any(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
         {
             _createError = "NAME ALREADY TAKEN";
             return;
         }
 
-        var c = await CharacterService.CreateCharacterAsync(UserSession.CurrentUser!.Id, name);
+        var c = await CharacterService.CreateCharacterAsync(
+            UserSession.CurrentUser!.Id, name,
+            _statAlloc["Speed"], _statAlloc["Strength"], _statAlloc["Smarts"],
+            _statAlloc["Agility"], _statAlloc["Toughness"], _statAlloc["Magic"], _statAlloc["Health"]);
         _characters.Add(c);
         _newCharName = "";
         _createError = "";
@@ -401,16 +773,23 @@ else if (_gameState == GameState.Playing && _character != null)
         if (e.Key == "Enter") await CreateCharacter();
     }
 
-    private void SelectCharacter(Character c)
+    private void SelectCharacter(Character c) { _character = c; StartGame(); }
+
+    private async Task DeleteCharacterAsync(int id)
     {
-        _character = c;
-        StartGame();
+        await CharacterService.DeleteCharacterAsync(id);
+        _characters = await CharacterService.GetCharactersAsync(UserSession.CurrentUser!.Id);
+        _deleteConfirmId = null;
     }
 
     private void ConfirmNewGame()
     {
         _showNewGameConfirm = false;
         _character = null;
+        _activeCombat = false;
+        _activeChallenge = false;
+        _activeExitChallenge = false;
+        _isExitChallenge = false;
         _gameState = GameState.CharSelect;
     }
 
@@ -421,10 +800,22 @@ else if (_gameState == GameState.Playing && _character != null)
         _playerX = 0;
         _playerY = 0;
         _tilesVisited = 0;
-        _inventory = [new InventoryItem("Dagger", "sword")];
+        _inventory =
+        [
+            new InventoryItem("Dagger", "sword", 4, "Dagger — Melee weapon, 4 damage"),
+            new InventoryItem("Healing Potion", "potion", 0, "Healing Potion — Restores 5 HP"),
+        ];
         _statusHistory = ["Your adventure begins. The realm awaits."];
+        _playerMaxHp = _character!.MaxHitPoints;
+        _playerHp = _playerMaxHp;
+        _activeCombat = false;
+        _activeChallenge = false;
+        _activeExitChallenge = false;
+        _isExitChallenge = false;
+        _usedRiddleTitles = [];
 
         var start = GetOrGenerateTile(0, 0, forceType: TileType.Grassland);
+        start.HasChallenge = false;
         MarkVisited(start);
 
         _gameState = GameState.Playing;
@@ -437,6 +828,50 @@ else if (_gameState == GameState.Playing && _character != null)
 
         var type = forceType ?? GenerateTileType(x, y);
         var tile = new MapTile { X = x, Y = y, Type = type };
+
+        if (forceType == null)
+        {
+            var dist = Math.Abs(x) + Math.Abs(y);
+
+            // Cliffs and mountains always require a challenge to pass
+            if (type == TileType.Cliff)
+            {
+                tile.HasChallenge = true;
+                tile.Challenge = GenerateCliffChallenge(dist);
+            }
+            else if (type == TileType.Mountain)
+            {
+                tile.HasChallenge = true;
+                tile.Challenge = GenerateMountainChallenge(dist);
+            }
+            else if (type != TileType.Water)
+            {
+                var challengeChance = Math.Min(0.4, 0.05 + dist * 0.03);
+                if (_rng.NextDouble() < challengeChance)
+                {
+                    tile.HasChallenge = true;
+                    tile.Challenge = type switch
+                    {
+                        TileType.Forest    => GenerateForestChallenge(dist),
+                        TileType.Grassland => GenerateGrasslandChallenge(dist),
+                        _                  => GenerateChallenge(type, dist)
+                    };
+                }
+                // Exit challenges: trap the player on the tile until cleared
+                if (dist >= 2 && (type == TileType.Forest || type == TileType.Grassland))
+                {
+                    var exitChance = Math.Min(0.22, 0.01 + dist * 0.02);
+                    if (_rng.NextDouble() < exitChance)
+                    {
+                        tile.HasExitChallenge = true;
+                        tile.ExitChallenge = type == TileType.Forest
+                            ? GenerateForestExitChallenge(dist)
+                            : GenerateGrasslandExitChallenge(dist);
+                    }
+                }
+            }
+        }
+
         _map[(x, y)] = tile;
         return tile;
     }
@@ -444,13 +879,16 @@ else if (_gameState == GameState.Playing && _character != null)
     private TileType GenerateTileType(int x, int y)
     {
         var weights = BaseWeights.ToDictionary(kv => kv.Key, kv => kv.Value);
-
         foreach (var (dx, dy) in Neighbors8)
         {
             if (_map.TryGetValue((x + dx, y + dy), out var neighbor))
+            {
                 weights[neighbor.Type] += ClusterBoost[neighbor.Type];
+                // Mountains increase cliff frequency in surrounding tiles
+                if (neighbor.Type == TileType.Mountain)
+                    weights[TileType.Cliff] += 12f;
+            }
         }
-
         return WeightedRandom(weights);
     }
 
@@ -476,11 +914,7 @@ else if (_gameState == GameState.Playing && _character != null)
 
     private void MarkVisited(MapTile tile)
     {
-        if (!tile.Visited)
-        {
-            tile.Visited = true;
-            _tilesVisited++;
-        }
+        if (!tile.Visited) { tile.Visited = true; _tilesVisited++; }
         RevealSurroundings(tile.X, tile.Y);
     }
 
@@ -489,12 +923,399 @@ else if (_gameState == GameState.Playing && _character != null)
         foreach (var (dx, dy) in Neighbors8)
         {
             var neighbor = GetOrGenerateTile(x + dx, y + dy);
-            if (!neighbor.Visited)
-                neighbor.Revealed = true;
+            if (!neighbor.Visited) neighbor.Revealed = true;
         }
     }
 
-    // ── Display helpers ───────────────────────────────────────────────────────
+    // ── Challenge generation ─────────────────────────────────────────────────
+    private Challenge GenerateChallenge(TileType type, int dist)
+    {
+        var types = new[] { ChallengeType.Combat, ChallengeType.StatCheck, ChallengeType.Riddle, ChallengeType.ItemRequired };
+        var chosen = types[_rng.Next(types.Length)];
+
+        if (chosen == ChallengeType.Riddle)
+        {
+            const string riddleTitle = "THE STONE GUARDIAN";
+            if (_usedRiddleTitles.Contains(riddleTitle))
+                return GenerateStatCheckChallenge(type, dist);
+            _usedRiddleTitles.Add(riddleTitle);
+            return new Challenge
+            {
+                Type = ChallengeType.Riddle,
+                Title = riddleTitle,
+                Description = "A stone face speaks: \"I have cities, but no houses. Mountains, but no trees. Water, but no fish. What am I?\"",
+                Icon = "🗿",
+                RiddleAnswer = "map",
+                Difficulty = Math.Clamp(dist / 2, 2, 7)
+            };
+        }
+
+        return chosen switch
+        {
+            ChallengeType.Combat => new Challenge
+            {
+                Type = ChallengeType.Combat,
+                Title = type == TileType.Forest ? "AMBUSH!" : "HOSTILE CREATURE",
+                Description = type == TileType.Forest
+                    ? "A creature leaps from the shadows! You must fight to pass."
+                    : "A hostile beast blocks your path. Prepare for battle!",
+                Icon = "⚔",
+                EnemyType = _rng.Next(2) == 0 ? "Goblin" : "Wolf"
+            },
+            ChallengeType.StatCheck => GenerateStatCheckChallenge(type, dist),
+            ChallengeType.ItemRequired => new Challenge
+            {
+                Type = ChallengeType.ItemRequired,
+                Title = "TOLL GATE",
+                Description = "An old hermit blocks the path. \"Pay the toll or turn back! I seek a precious Gem.\"",
+                Icon = "🚧",
+                RequiredItemName = "Gem"
+            },
+            _ => GenerateStatCheckChallenge(type, dist)
+        };
+    }
+
+    private Challenge GenerateCliffChallenge(int dist)
+    {
+        // Difficulty scales in 4 tiers with distance from origin
+        int difficulty = dist switch
+        {
+            <= 2 => _rng.Next(2, 4),   // easy:   DC 12-13
+            <= 5 => _rng.Next(4, 6),   // medium: DC 14-15
+            <= 9 => _rng.Next(5, 8),   // hard:   DC 15-17
+            _    => _rng.Next(7, 10),  // brutal: DC 17-19
+        };
+
+        var variant = _rng.Next(4);
+        var (stat, title, desc) = variant switch
+        {
+            0 => ("Agility", "TREACHEROUS CLIMB",
+                "The cliff face is sheer and unstable. You must climb with great care."),
+            1 => ("Strength", "STEEP ASCENT",
+                "A near-vertical rock wall towers above. Only brute strength will get you up."),
+            2 => ("Strength", "LOOSE BOULDERS",
+                "Unstable boulders block the way up. You must heave them aside to find footholds."),
+            _ => ("Agility", "SHEER FACE",
+                "A sheer rock face offers almost no handholds. You need perfect balance and technique."),
+        };
+
+        return new Challenge
+        {
+            Type = ChallengeType.StatCheck,
+            Title = title, Description = desc, Icon = "🧗",
+            StatName = stat,
+            Difficulty = difficulty
+        };
+    }
+
+    private Challenge GenerateMountainChallenge(int dist)
+    {
+        int difficulty = dist switch
+        {
+            <= 2 => _rng.Next(3, 5),
+            <= 5 => _rng.Next(5, 7),
+            <= 9 => _rng.Next(6, 9),
+            _    => _rng.Next(8, 11),
+        };
+
+        var variant = _rng.Next(4);
+        var (title, desc) = variant switch
+        {
+            0 => ("TREACHEROUS PASS",
+                "The mountain path twists through blinding fog and loose scree. You must navigate carefully."),
+            1 => ("ALTITUDE SICKNESS",
+                "The thin air and bitter cold sap your focus. Sharp wits are needed to push through."),
+            2 => ("ROCKSLIDE",
+                "A rumble echoes above — boulders cascade down the slope. Read the terrain and dodge."),
+            _ => ("BLIZZARD CROSSING",
+                "A sudden storm engulfs the peak. Only knowledge of mountain survival can see you through."),
+        };
+
+        return new Challenge
+        {
+            Type = ChallengeType.StatCheck,
+            Title = title, Description = desc, Icon = "🏔",
+            StatName = "Smarts",
+            Difficulty = difficulty
+        };
+    }
+
+    private Challenge GenerateForestChallenge(int dist)
+    {
+        int difficulty = Math.Min(8, 2 + dist / 2);
+        bool riddleUsed = _usedRiddleTitles.Contains("THE FOREST SPIRIT");
+        var chosen = _rng.Next(riddleUsed ? 4 : 5);
+
+        if (chosen == 4)
+        {
+            _usedRiddleTitles.Add("THE FOREST SPIRIT");
+            return new Challenge
+            {
+                Type = ChallengeType.Riddle,
+                Title = "THE FOREST SPIRIT",
+                Description = "A shimmering spirit blocks the path: \"I speak without a mouth, I hear without ears. I have no body, but I come alive with wind. What am I?\"",
+                Icon = "🌟", RiddleAnswer = "echo",
+                Difficulty = Math.Clamp(dist / 2, 2, 6),
+            };
+        }
+
+        return chosen switch
+        {
+            0 => new Challenge
+            {
+                Type = ChallengeType.Combat, EnemyType = "Wolf",
+                Title = "PACK ATTACK",
+                Description = "A snarling dire wolf lunges from the undergrowth! The pack circles you.",
+                Icon = "🐺",
+            },
+            1 => new Challenge
+            {
+                Type = ChallengeType.Combat, EnemyType = "Spider",
+                Title = "SPIDER AMBUSH",
+                Description = "A giant spider drops from the canopy above, fangs bared!",
+                Icon = "🕷",
+            },
+            2 => new Challenge
+            {
+                Type = ChallengeType.StatCheck, StatName = "Strength",
+                Title = "DENSE THICKET",
+                Description = "A wall of interlocked branches blocks the forest path. Brute force is needed to push through.",
+                Icon = "🌿", Difficulty = difficulty,
+            },
+            _ => new Challenge
+            {
+                Type = ChallengeType.StatCheck, StatName = "Agility",
+                Title = "HIDDEN PITFALL",
+                Description = "The forest floor gives way — a camouflaged pit! You're already falling. React now!",
+                Icon = "🕳", Difficulty = difficulty, AllowRetreat = false,
+            },
+        };
+    }
+
+    private Challenge GenerateGrasslandChallenge(int dist)
+    {
+        int difficulty = Math.Min(8, 2 + dist / 2);
+        bool riddleUsed = _usedRiddleTitles.Contains("THE WANDERING SAGE");
+        var chosen = _rng.Next(riddleUsed ? 4 : 5);
+
+        if (chosen == 4)
+        {
+            _usedRiddleTitles.Add("THE WANDERING SAGE");
+            return new Challenge
+            {
+                Type = ChallengeType.Riddle,
+                Title = "THE WANDERING SAGE",
+                Description = "An old wanderer plants their staff across the path: \"Answer this and pass — the more you take, the more you leave behind. What am I?\"",
+                Icon = "🧙", RiddleAnswer = "footsteps",
+                Difficulty = Math.Clamp(dist / 2, 2, 6),
+            };
+        }
+
+        return chosen switch
+        {
+            0 => new Challenge
+            {
+                Type = ChallengeType.Combat, EnemyType = "Goblin",
+                Title = "BANDIT AMBUSH",
+                Description = "A band of road bandits steps from the tall grass, weapons drawn. \"Your valuables, traveller!\"",
+                Icon = "⚔",
+            },
+            1 => new Challenge
+            {
+                Type = ChallengeType.Combat, EnemyType = "Boar",
+                Title = "WILD BOAR",
+                Description = "A massive boar charges from the grass, tusks gleaming. You must stand your ground!",
+                Icon = "🐗",
+            },
+            2 => new Challenge
+            {
+                Type = ChallengeType.StatCheck, StatName = "Toughness",
+                Title = "SUDDEN STORM",
+                Description = "A savage squall sweeps the plains — biting hail and howling winds. There is nowhere to shelter. Endure or be battered!",
+                Icon = "⛈", Difficulty = difficulty, AllowRetreat = false,
+            },
+            _ => new Challenge
+            {
+                Type = ChallengeType.StatCheck, StatName = "Agility",
+                Title = "CONCEALED PIT TRAP",
+                Description = "The ground vanishes beneath your foot — a hidden pit! You're already tipping in. Move fast!",
+                Icon = "🕳", Difficulty = difficulty, AllowRetreat = false,
+            },
+        };
+    }
+
+    private Challenge GenerateForestExitChallenge(int dist)
+    {
+        int difficulty = Math.Min(9, 3 + dist / 2);
+        var variant = _rng.Next(3);
+        return variant switch
+        {
+            0 => new Challenge
+            {
+                Type = ChallengeType.StatCheck, StatName = "Strength",
+                Title = "QUICKSAND BOG",
+                Description = "The ground has swallowed your feet — quicksand! Struggling makes it worse. Haul yourself free with raw strength.",
+                Icon = "🌊", Difficulty = difficulty,
+            },
+            1 => new Challenge
+            {
+                Type = ChallengeType.StatCheck, StatName = "Agility",
+                Title = "SPIDER'S WEB",
+                Description = "Thick silken threads have wrapped around you while you stood here. Twist and slip free before the spider returns!",
+                Icon = "🕸", Difficulty = difficulty,
+            },
+            _ => new Challenge
+            {
+                Type = ChallengeType.StatCheck, StatName = "Magic",
+                Title = "ENCHANTED BINDING",
+                Description = "Invisible bands of forest magic root your feet to the ground. Channel your inner power to break the enchantment.",
+                Icon = "✨", Difficulty = difficulty,
+            },
+        };
+    }
+
+    private Challenge GenerateGrasslandExitChallenge(int dist)
+    {
+        int difficulty = Math.Min(9, 3 + dist / 2);
+        var variant = _rng.Next(3);
+        return variant switch
+        {
+            0 => new Challenge
+            {
+                Type = ChallengeType.StatCheck, StatName = "Agility",
+                Title = "SINKHOLE",
+                Description = "The earth gives way beneath you — a sinkhole! Scramble and leap to get your footing on solid ground.",
+                Icon = "🕳", Difficulty = difficulty,
+            },
+            1 => new Challenge
+            {
+                Type = ChallengeType.StatCheck, StatName = "Smarts",
+                Title = "BEWILDERING MIST",
+                Description = "A disorienting fog rolls in from nowhere, leaving you completely turned around. Use your wits to find true north.",
+                Icon = "🌫", Difficulty = difficulty,
+            },
+            _ => new Challenge
+            {
+                Type = ChallengeType.StatCheck, StatName = "Strength",
+                Title = "ENTANGLING ROOTS",
+                Description = "Twisted root tendrils have burst up from the soil and coiled around your legs. Tear yourself free!",
+                Icon = "🌱", Difficulty = difficulty,
+            },
+        };
+    }
+
+    private Challenge GenerateStatCheckChallenge(TileType type, int dist)
+    {
+        var (stat, title, desc) = type switch
+        {
+            TileType.Cliff => ("Agility", "TREACHEROUS CLIMB",
+                "The cliff face is sheer and crumbling. You must climb with great care."),
+            TileType.Forest => ("Smarts", "LOST IN THE WOODS",
+                "The forest grows dense and confusing. You need wits to find the path."),
+            _ => _rng.Next(2) == 0
+                ? ("Strength", "FALLEN BOULDER",
+                    "A massive boulder blocks the passage. You must push it aside.")
+                : ("Agility", "NARROW LEDGE",
+                    "A crumbling ledge is the only way forward. One wrong step means a fall.")
+        };
+
+        return new Challenge
+        {
+            Type = ChallengeType.StatCheck,
+            Title = title, Description = desc, Icon = "💪",
+            StatName = stat,
+            Difficulty = Math.Min(8, 3 + dist / 2)
+        };
+    }
+
+    private static MarkupString ChallengeTypeIcon(ChallengeType? type) => type switch
+    {
+        ChallengeType.Combat       => SvgIcon("swords", 10),
+        ChallengeType.StatCheck    => SvgIcon("target", 10),
+        ChallengeType.Riddle       => SvgIcon("scroll", 10),
+        ChallengeType.ItemRequired => SvgIcon("gem", 10),
+        _                          => SvgIcon("circle-plus", 10)
+    };
+
+    // ── Enemy creation ───────────────────────────────────────────────────────
+    private Enemy CreateEnemy(string type) => type switch
+    {
+        "Goblin" => new Enemy
+        {
+            Name = "Goblin Archer", Icon = "👺",
+            Hp = 12, MaxHp = 12,
+            AttackStat = 3, DefenseStat = 2,
+            Damage = 3, Armor = 1,
+            AttackType = "ranged",
+            LootName = "Bow", LootIcon = "bow", LootDamage = 5,
+            LootTooltip = "Bow — Ranged weapon, 5 damage"
+        },
+        "Wolf" => new Enemy
+        {
+            Name = "Dire Wolf", Icon = "🐺",
+            Hp = 18, MaxHp = 18,
+            AttackStat = 4, DefenseStat = 3,
+            Damage = 4, Armor = 0,
+            AttackType = "melee",
+            LootName = "Pelt", LootIcon = "shield",
+            LootTooltip = "Pelt — Trophy, can be traded"
+        },
+        "Boar" => new Enemy
+        {
+            Name = "Wild Boar", Icon = "🐗",
+            Hp = 16, MaxHp = 16,
+            AttackStat = 5, DefenseStat = 2,
+            Damage = 5, Armor = 2,
+            AttackType = "melee",
+            LootName = "Boar Tusk", LootIcon = "sword", LootDamage = 6,
+            LootTooltip = "Boar Tusk — crude but vicious melee weapon, 6 damage"
+        },
+        "Spider" => new Enemy
+        {
+            Name = "Giant Spider", Icon = "🕷",
+            Hp = 10, MaxHp = 10,
+            AttackStat = 3, DefenseStat = 4,
+            Damage = 3, Armor = 0,
+            AttackType = "ranged",
+            LootName = "Spider Silk", LootIcon = "scroll", LootDamage = 0,
+            LootTooltip = "Spider Silk — rare material, can be traded"
+        },
+        _ => CreateEnemy("Goblin")
+    };
+
+    // ── Inventory helpers ────────────────────────────────────────────────────
+    private string GetItemTooltip(InventoryItem? item)
+    {
+        if (item == null) return "Empty";
+        if (!string.IsNullOrEmpty(item.Tooltip)) return item.Tooltip;
+        return item.Damage > 0 ? $"{item.Name} — {item.Damage} damage" : item.Name;
+    }
+
+    private string GetMeleeWeaponName()
+    {
+        // Pick best melee weapon by damage
+        var melee = _inventory.Where(i => i.Name == "Dagger" || i.Name == "Sword")
+            .OrderByDescending(i => i.Damage).FirstOrDefault();
+        return melee?.Name ?? "Fists";
+    }
+
+    private int GetMeleeWeaponDamage()
+    {
+        var melee = _inventory.Where(i => i.Name == "Dagger" || i.Name == "Sword")
+            .OrderByDescending(i => i.Damage).FirstOrDefault();
+        return melee?.Damage ?? 1;
+    }
+
+    private int GetBowDamage()
+    {
+        var bow = _inventory.FirstOrDefault(i => i.Name == "Bow");
+        return bow?.Damage ?? 3;
+    }
+
+    private bool HasBow() => _inventory.Any(i => i.Name == "Bow");
+    private bool HasHealingPotion() => _inventory.Any(i => i.Name == "Healing Potion");
+
+    // ── Display helpers ──────────────────────────────────────────────────────
     private MapTile? GetDisplayTile(int x, int y)
     {
         _map.TryGetValue((x, y), out var tile);
@@ -503,7 +1324,13 @@ else if (_gameState == GameState.Playing && _character != null)
 
     private string BuildTileClass(MapTile? tile, bool isPlayer, bool isAdjacent)
     {
-        if (isPlayer) return "map-tile tile-player";
+        if (isPlayer)
+        {
+            // Add terrain class to player tile for background color
+            var pTile = GetDisplayTile(_playerX, _playerY);
+            var terrainSuffix = pTile != null ? $" tile-type-{pTile.Type.ToString().ToLower()}" : "";
+            return $"map-tile tile-player{terrainSuffix}";
+        }
 
         var parts = new System.Text.StringBuilder("map-tile");
 
@@ -515,13 +1342,18 @@ else if (_gameState == GameState.Playing && _character != null)
         {
             parts.Append(" tile-visited tile-type-");
             parts.Append(tile.Type.ToString().ToLower());
-            if (isAdjacent) parts.Append(" tile-adjacent");
+            if (isAdjacent && !MovementLocked) parts.Append(" tile-adjacent");
+            if (tile.HasChallenge && !tile.ChallengeCleared && tile.RetreatedFrom)
+                parts.Append(" tile-retreated");
         }
         else
         {
             parts.Append(" tile-revealed tile-type-");
             parts.Append(tile.Type.ToString().ToLower());
-            if (isAdjacent && tile.Type != TileType.Water) parts.Append(" tile-adjacent");
+            if (isAdjacent && tile.Type != TileType.Water && !MovementLocked)
+                parts.Append(" tile-adjacent");
+            if (tile.HasChallenge && !tile.ChallengeCleared && tile.RetreatedFrom)
+                parts.Append(" tile-retreated");
         }
 
         return parts.ToString();
@@ -533,7 +1365,8 @@ else if (_gameState == GameState.Playing && _character != null)
         TileType.Grassland => "leaf",
         TileType.Cliff     => "mountain",
         TileType.Water     => "waves",
-        _                  => "compass"
+        TileType.Mountain  => "mountain-snow",
+        _                  => "leaf"
     }, 18);
 
     private string GetTileTooltip(MapTile? tile, bool isPlayer)
@@ -541,6 +1374,20 @@ else if (_gameState == GameState.Playing && _character != null)
         if (isPlayer) return $"{_character?.Name ?? "You"} — current position";
         if (tile == null || (!tile.Visited && !tile.Revealed)) return "Unexplored";
         if (!tile.Visited) return $"{tile.Type} (unvisited)";
+        if (tile.HasChallenge && !tile.ChallengeCleared && tile.RetreatedFrom)
+        {
+            var cType = tile.Challenge?.Type switch
+            {
+                ChallengeType.Combat => "Combat",
+                ChallengeType.StatCheck => $"Skill check ({tile.Challenge?.StatName})",
+                ChallengeType.Riddle => "Riddle",
+                ChallengeType.ItemRequired => $"Requires {tile.Challenge?.RequiredItemName}",
+                _ => "Challenge"
+            };
+            return $"{tile.Type} — Retreated: {cType}";
+        }
+        if (tile.HasChallenge && !tile.ChallengeCleared)
+            return $"{tile.Type} — ⚠ Challenge ahead";
         return tile.Type.ToString();
     }
 
@@ -550,53 +1397,502 @@ else if (_gameState == GameState.Playing && _character != null)
         TileType.Grassland => "Open plains stretch in all directions. A gentle breeze stirs the tall grass. Good ground to travel.",
         TileType.Cliff     => "Jagged rock faces rise sharply. Loose stones crumble underfoot. Every step demands care.",
         TileType.Water     => "Dark water stretches before you, too deep and cold to cross. You'll need to find another way.",
+        TileType.Mountain  => "Towering peaks loom overhead, wreathed in mist and snow. The air is thin and the path treacherous.",
         _                  => "You stand here, taking in the surroundings."
     };
 
     // ── Movement ─────────────────────────────────────────────────────────────
     private void OnTileClickAsync(int tx, int ty)
     {
-        if (_gameState != GameState.Playing) return;
+        if (_gameState != GameState.Playing || MovementLocked) return;
         if (tx == _playerX && ty == _playerY) return;
-
         if (Math.Abs(tx - _playerX) > 1 || Math.Abs(ty - _playerY) > 1) return;
 
         var tile = GetOrGenerateTile(tx, ty);
 
-        switch (tile.Type)
+        if (tile.Type == TileType.Water)
         {
-            case TileType.Water:
-                PushStatus("The water is too deep to cross. You step back.");
-                return;
-
-            case TileType.Cliff:
-                PushStatus("You scramble up the rocky cliff face. The rough terrain is exhausting.");
-                break;
-
-            case TileType.Forest:
-                PushStatus("You push through the dense forest undergrowth.");
-                break;
-
-            case TileType.Grassland:
-                PushStatus("You stride across the open grassland.");
-                break;
+            PushStatus("The water is too deep to cross. You step back.");
+            return;
         }
 
+        if (tile.HasChallenge && !tile.ChallengeCleared)
+        {
+            _pendingMoveTo = (tx, ty);
+            _currentChallenge = tile.Challenge;
+            _challengeResolved = false;
+            _challengeSuccess = false;
+            _challengeResultMsg = "";
+            _riddleAnswer = "";
+            _activeChallenge = true;
+            return;
+        }
+
+        MoveToTile(tx, ty, tile);
+    }
+
+    private void MoveToTile(int tx, int ty, MapTile tile)
+    {
+        switch (tile.Type)
+        {
+            case TileType.Cliff:    PushStatus("You scramble up the rocky cliff face."); break;
+            case TileType.Forest:   PushStatus("You push through the dense undergrowth."); break;
+            case TileType.Grassland: PushStatus("You stride across the open grassland."); break;
+            case TileType.Mountain: PushStatus("You crest the mountain pass, breathing thin cold air."); break;
+        }
         _playerX = tx;
         _playerY = ty;
         MarkVisited(tile);
+
+        // Trigger exit challenge if present and not yet cleared — open challenge panel immediately
+        if (tile.HasExitChallenge && !tile.ExitChallengeCleared)
+        {
+            _activeExitChallenge = true;
+            _currentChallenge = tile.ExitChallenge;
+            _challengeResolved = false;
+            _challengeSuccess = false;
+            _challengeResultMsg = "";
+            _riddleAnswer = "";
+            _isExitChallenge = true;
+            _activeChallenge = true;
+            PushStatus($"⚠ TRAPPED — \"{tile.ExitChallenge?.Title}\" holds you fast!");
+        }
     }
+
+    // ── Challenge resolution ─────────────────────────────────────────────────
+    private void AttemptStatCheck()
+    {
+        if (_currentChallenge == null || _character == null) return;
+        var statVal = GetCharStat(_character, _currentChallenge.StatName!);
+        var roll = _rng.Next(1, 21);
+        var total = roll + statVal;
+        var dc = _currentChallenge.Difficulty + 10;
+
+        if (total >= dc)
+        {
+            _challengeSuccess = true;
+            _challengeResultMsg = $"Rolled {roll}+{statVal}={total} vs DC {dc}. SUCCESS!";
+        }
+        else
+        {
+            _challengeSuccess = false;
+            var dmg = _rng.Next(1, 4);
+            var flavor = _currentChallenge?.StatName switch
+            {
+                "Agility"  => $"You slip and crash hard into the rocks — {dmg} damage.",
+                "Strength" => $"The obstacle overwhelms you and you are battered — {dmg} damage.",
+                "Smarts"   => $"Confusion overwhelms you and you stumble badly — {dmg} damage.",
+                _          => $"The challenge strikes back — {dmg} damage."
+            };
+            var (avoided, mitigMsg) = TryMitigationRoll("Toughness", dmg,
+                $"Rolled {roll}+{statVal}={total} vs DC {dc}. FAILED! {flavor}");
+            _challengeResultMsg = avoided
+                ? $"Rolled {roll}+{statVal}={total} vs DC {dc}. FAILED! {mitigMsg}"
+                : mitigMsg;
+        }
+        _challengeResolved = true;
+    }
+
+    private void AttemptRiddle()
+    {
+        if (_currentChallenge == null) return;
+        if (FuzzyMatchRiddle(_riddleAnswer, _currentChallenge.RiddleAnswer!))
+        {
+            _challengeSuccess = true;
+            _challengeResultMsg = "\"Correct!\" The guardian's eyes glow and the path opens.";
+        }
+        else
+        {
+            _challengeSuccess = false;
+            _challengeResultMsg = "\"Wrong answer, mortal.\" The way remains closed.";
+        }
+        _challengeResolved = true;
+    }
+
+    private static bool FuzzyMatchRiddle(string input, string answer)
+    {
+        static string Normalize(string s)
+        {
+            s = s.Trim().ToLower();
+            foreach (var article in new[] { "an ", "a ", "the " })
+                if (s.StartsWith(article)) s = s[article.Length..];
+            return new string(s.Where(char.IsLetterOrDigit).ToArray());
+        }
+        var normInput  = Normalize(input);
+        var normAnswer = Normalize(answer);
+        return normInput == normAnswer || normInput.Contains(normAnswer);
+    }
+
+    private async Task OnRiddleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AttemptRiddle();
+    }
+
+    private void AttemptRiddleStatRoll()
+    {
+        if (_currentChallenge == null || _character == null) return;
+        var statVal = GetCharStat(_character, "Smarts");
+        var roll = _rng.Next(1, 21);
+        var total = roll + statVal;
+        var dc = _currentChallenge.Difficulty + 10;
+
+        if (total >= dc)
+        {
+            _challengeSuccess = true;
+            _challengeResultMsg = $"Rolled {roll}+{statVal}={total} vs DC {dc}. Your wit prevails!";
+        }
+        else
+        {
+            _challengeSuccess = false;
+            var dmg = _rng.Next(1, 4);
+            var (avoided, mitigMsg) = TryMitigationRoll("Magic", dmg,
+                $"Rolled {roll}+{statVal}={total} vs DC {dc}. The guardian's eyes blaze and fire bolts of magic — {dmg} damage.");
+            _challengeResultMsg = avoided
+                ? $"Rolled {roll}+{statVal}={total} vs DC {dc}. The guardian fires, but your Magic wards the bolt! {mitigMsg}"
+                : mitigMsg;
+        }
+        _challengeResolved = true;
+    }
+
+    private void AttemptItemChallenge()
+    {
+        if (_currentChallenge == null) return;
+        var needed = _currentChallenge.RequiredItemName!;
+        var item = _inventory.FirstOrDefault(i => i.Name.Equals(needed, StringComparison.OrdinalIgnoreCase));
+        if (item != null)
+        {
+            _inventory.Remove(item);
+            _challengeSuccess = true;
+            _challengeResultMsg = $"You hand over the {needed}. \"You may pass.\"";
+        }
+        else
+        {
+            _challengeSuccess = false;
+            var dmg = _rng.Next(1, 3);
+            var (avoided, mitigMsg) = TryMitigationRoll("Magic", dmg,
+                $"You don't have a {needed}. The hermit snarls and curses you with a hex — {dmg} damage.");
+            _challengeResultMsg = avoided
+                ? $"You don't have a {needed}. The hermit attempts a hex, but your Magic repels it! {mitigMsg}"
+                : mitigMsg;
+        }
+        _challengeResolved = true;
+    }
+
+    private void StartCombatChallenge()
+    {
+        if (_currentChallenge?.EnemyType == null) return;
+        _currentEnemy = CreateEnemy(_currentChallenge.EnemyType);
+        _combatLog = [$"A {_currentEnemy.Name} appears!"];
+        _combatOver = false;
+        _combatWon = false;
+        _combatResultMsg = "";
+        _activeChallenge = false;
+        _activeCombat = true;
+    }
+
+    private void RetreatFromChallenge()
+    {
+        // Mark tile as retreated (only for entry challenges)
+        if (_pendingMoveTo.HasValue)
+        {
+            var tile = GetDisplayTile(_pendingMoveTo.Value.Item1, _pendingMoveTo.Value.Item2);
+            if (tile != null) tile.RetreatedFrom = true;
+        }
+        _isExitChallenge = false;
+        _currentChallenge = null;
+        _pendingMoveTo = null;
+        _activeChallenge = false;
+        PushStatus("You retreat from the challenge.");
+    }
+
+    private void EndChallenge()
+    {
+        if (_isExitChallenge)
+        {
+            // Exit challenge: player is already on the tile, success unlocks movement
+            if (_challengeSuccess)
+            {
+                var tile = GetDisplayTile(_playerX, _playerY);
+                if (tile != null) tile.ExitChallengeCleared = true;
+                _activeExitChallenge = false;
+                PushStatus("You break free! The way is clear — you may move again.");
+            }
+            else
+            {
+                PushStatus("You are still trapped. Try again!");
+                // _activeExitChallenge remains true — player cannot leave
+                // Reset challenge state so the player can retry immediately
+                _challengeResolved = false;
+                _challengeSuccess = false;
+                _challengeResultMsg = "";
+                _riddleAnswer = "";
+                return; // keep _activeChallenge and _isExitChallenge active
+            }
+            _isExitChallenge = false;
+        }
+        else if (_challengeSuccess && _pendingMoveTo.HasValue)
+        {
+            var (tx, ty) = _pendingMoveTo.Value;
+            var tile = GetOrGenerateTile(tx, ty);
+            tile.ChallengeCleared = true;
+            MoveToTile(tx, ty, tile);
+            PushStatus("Challenge overcome! You advance.");
+        }
+        else
+        {
+            // Failed entry challenge — mark tile as retreated
+            if (_pendingMoveTo.HasValue)
+            {
+                var tile = GetDisplayTile(_pendingMoveTo.Value.Item1, _pendingMoveTo.Value.Item2);
+                if (tile != null) tile.RetreatedFrom = true;
+            }
+            PushStatus("The challenge remains.");
+        }
+        _currentChallenge = null;
+        _pendingMoveTo = null;
+        _activeChallenge = false;
+    }
+
+    private void TriggerExitChallenge()
+    {
+        var tile = GetDisplayTile(_playerX, _playerY);
+        if (tile?.ExitChallenge == null || tile.ExitChallengeCleared) return;
+        _currentChallenge = tile.ExitChallenge;
+        _challengeResolved = false;
+        _challengeSuccess = false;
+        _challengeResultMsg = "";
+        _riddleAnswer = "";
+        _isExitChallenge = true;
+        _activeChallenge = true;
+    }
+
+    // ── Combat system ────────────────────────────────────────────────────────
+    private void PlayerAttack(string type)
+    {
+        if (_currentEnemy == null || _character == null || _combatOver) return;
+
+        int attackStat, defenderStat, baseDamage;
+        string attackDesc;
+
+        if (type == "ranged" && HasBow())
+        {
+            attackStat = _character.Agility;
+            defenderStat = _currentEnemy.DefenseStat;
+            baseDamage = GetBowDamage();
+            attackDesc = "fire an arrow";
+        }
+        else
+        {
+            attackStat = _character.Strength;
+            defenderStat = _currentEnemy.DefenseStat;
+            baseDamage = GetMeleeWeaponDamage() + (_character.Strength / 2);
+            attackDesc = $"swing your {GetMeleeWeaponName().ToLower()}";
+        }
+
+        var atkRoll = _rng.Next(1, 21) + attackStat;
+        var defRoll = _rng.Next(1, 21) + defenderStat;
+
+        if (atkRoll >= defRoll)
+        {
+            var dmg = Math.Max(1, baseDamage - _currentEnemy.Armor);
+            _currentEnemy.Hp -= dmg;
+            _combatLog.Insert(0, $"You {attackDesc}: {dmg} dmg ({atkRoll} vs {defRoll})");
+
+            if (_currentEnemy.Hp <= 0)
+            {
+                _combatOver = true;
+                _combatWon = true;
+                _combatResultMsg = $"VICTORY! {_currentEnemy.Name} defeated!";
+                if (_currentEnemy.LootName != null && _inventory.Count < 10
+                    && !_inventory.Any(i => i.Name == _currentEnemy.LootName))
+                {
+                    _inventory.Add(new InventoryItem(_currentEnemy.LootName, _currentEnemy.LootIcon ?? "circle-plus",
+                        _currentEnemy.LootDamage, _currentEnemy.LootTooltip));
+                    _combatLog.Insert(0, $"Loot: {_currentEnemy.LootName}!");
+                }
+                if (_rng.Next(3) == 0 && _inventory.Count < 10)
+                {
+                    _inventory.Add(new InventoryItem("Gem", "gem", 0, "Gem — Precious stone, needed for tolls"));
+                    _combatLog.Insert(0, "Loot: Gem!");
+                }
+                return;
+            }
+        }
+        else
+        {
+            _combatLog.Insert(0, $"You {attackDesc} but miss ({atkRoll} vs {defRoll})");
+        }
+
+        EnemyAttack();
+    }
+
+    private void UseHealingPotion()
+    {
+        if (_combatOver) return;
+        var potion = _inventory.FirstOrDefault(i => i.Name == "Healing Potion");
+        if (potion == null) return;
+
+        _inventory.Remove(potion);
+        var healed = Math.Min(5, _playerMaxHp - _playerHp);
+        _playerHp += healed;
+        _combatLog.Insert(0, $"You drink a Healing Potion and recover {healed} HP.");
+
+        EnemyAttack();
+    }
+
+    private void EnemyAttack()
+    {
+        if (_currentEnemy == null || _character == null) return;
+
+        var enemyRoll = _rng.Next(1, 21) + _currentEnemy.AttackStat;
+        var playerDef = _rng.Next(1, 21) + _character.Agility;
+
+        if (enemyRoll >= playerDef)
+        {
+            var dmg = Math.Max(1, _currentEnemy.Damage - (_character.Toughness / 2));
+            _playerHp -= dmg;
+            _combatLog.Insert(0, $"{_currentEnemy.Name} hits: {dmg} dmg");
+
+            if (_playerHp <= 0)
+            {
+                _playerHp = 0;
+                _combatOver = true;
+                _combatWon = false;
+                _playerDead = true;
+                _combatResultMsg = "DEFEATED! You fall in battle...";
+            }
+        }
+        else
+        {
+            _combatLog.Insert(0, $"{_currentEnemy.Name} misses!");
+        }
+    }
+
+    private void AttemptFlee()
+    {
+        if (_character == null || _combatOver) return;
+
+        var fleeRoll = _rng.Next(1, 21) + _character.Speed;
+        var enemyRoll = _rng.Next(1, 21) + (_currentEnemy?.AttackStat ?? 3);
+
+        if (fleeRoll >= enemyRoll)
+        {
+            _combatOver = true;
+            _combatWon = false;
+            _combatResultMsg = "You flee successfully!";
+            _combatLog.Insert(0, "You escape!");
+        }
+        else
+        {
+            _combatLog.Insert(0, $"Failed to flee! ({fleeRoll} vs {enemyRoll})");
+            if (_inventory.Count > 0)
+            {
+                var idx = _rng.Next(_inventory.Count);
+                var lost = _inventory[idx];
+                _inventory.RemoveAt(idx);
+                _combatLog.Insert(0, $"Dropped {lost.Name}!");
+            }
+            EnemyAttack();
+        }
+    }
+
+    private void EndCombat()
+    {
+        if (_combatWon && _pendingMoveTo.HasValue)
+        {
+            var (tx, ty) = _pendingMoveTo.Value;
+            var tile = GetOrGenerateTile(tx, ty);
+            tile.ChallengeCleared = true;
+            MoveToTile(tx, ty, tile);
+            PushStatus($"Defeated {_currentEnemy?.Name ?? "enemy"}. You advance.");
+        }
+        else
+        {
+            // Fled — mark retreated
+            if (_pendingMoveTo.HasValue)
+            {
+                var tile = GetDisplayTile(_pendingMoveTo.Value.Item1, _pendingMoveTo.Value.Item2);
+                if (tile != null) tile.RetreatedFrom = true;
+            }
+            PushStatus("You escaped the battle.");
+        }
+
+        _currentEnemy = null;
+        _pendingMoveTo = null;
+        _activeCombat = false;
+        _playerDead = false;
+    }
+
+    private async Task EndCombatDeath()
+    {
+        // Save score (tiles visited)
+        if (UserSession.CurrentUser != null)
+        {
+            await ScoreService.SaveScoreAsync(UserSession.CurrentUser.Id, "Explorer", _tilesVisited);
+        }
+
+        // Reset all state and boot to character picker
+        _currentEnemy = null;
+        _pendingMoveTo = null;
+        _activeCombat = false;
+        _activeChallenge = false;
+        _playerDead = false;
+        _character = null;
+        _gameState = GameState.CharSelect;
+    }
+
+    // ── Damage mitigation roll ───────────────────────────────────────────────
+    private (bool avoided, string msg) TryMitigationRoll(string mitigStat, int dmg, string flavorText)
+    {
+        if (_character == null) { _playerHp = Math.Max(0, _playerHp - dmg); return (false, flavorText); }
+        var statVal = GetCharStat(_character, mitigStat);
+        var roll = _rng.Next(1, 21);
+        var total = roll + statVal;
+        const int mitigDC = 12;
+        if (total >= mitigDC)
+            return (true, $"Your {mitigStat} ({roll}+{statVal}={total} vs DC {mitigDC}) braces the blow — no damage!");
+        _playerHp = Math.Max(0, _playerHp - dmg);
+        return (false, flavorText);
+    }
+
+    // ── Stat helpers ─────────────────────────────────────────────────────────
+    private static int GetCharStat(Character c, string stat) => stat switch
+    {
+        "Speed" => c.Speed, "Strength" => c.Strength, "Smarts" => c.Smarts,
+        "Agility" => c.Agility, "Toughness" => c.Toughness, "Magic" => c.Magic,
+        "Health" => c.Health, _ => 1
+    };
 
     private void PushStatus(string message)
     {
         _statusHistory.Insert(0, message);
-        if (_statusHistory.Count > 50)
-            _statusHistory.RemoveAt(_statusHistory.Count - 1);
+        if (_statusHistory.Count > 50) _statusHistory.RemoveAt(_statusHistory.Count - 1);
     }
 
     private void ToggleStatus() => _statusExpanded = !_statusExpanded;
 
-    // ── SVG icon helper ───────────────────────────────────────────────────────
+    private void UseItemOutOfCombat(InventoryItem item)
+    {
+        if (_activeCombat || _activeChallenge) return;
+        if (item.Name == "Healing Potion")
+        {
+            var healed = Math.Min(5, _playerMaxHp - _playerHp);
+            if (healed <= 0) { PushStatus("You are already at full health."); return; }
+            _inventory.Remove(item);
+            _playerHp += healed;
+            PushStatus($"You drink the Healing Potion and recover {healed} HP. ({_playerHp}/{_playerMaxHp})");
+        }
+    }
+
+    private void Rest()
+    {
+        if (_activeCombat || _activeChallenge || _playerHp >= _playerMaxHp) return;
+        var healed = Math.Max(1, (_playerMaxHp - _playerHp) / 2);
+        _playerHp = Math.Min(_playerMaxHp, _playerHp + healed);
+        PushStatus($"You rest and tend your wounds, recovering {healed} HP. ({_playerHp}/{_playerMaxHp})");
+    }
+
+    // ── SVG icon helper ──────────────────────────────────────────────────────
     private static MarkupString SvgIcon(string name, int size = 18, string? extraClass = null)
     {
         var cls = extraClass != null ? $" {extraClass}" : "";
@@ -604,7 +1900,9 @@ else if (_gameState == GameState.Playing && _character != null)
         {
             "tree-pine"   => """<path d="m17 14 3 3.3a1 1 0 0 1-.7 1.7H4.7a1 1 0 0 1-.7-1.7L7 14h-.3a1 1 0 0 1-.7-1.7L9 9h-.2A1 1 0 0 1 8 7.3L12 3l4 4.3a1 1 0 0 1-.8 1.7H15l3 3.3a1 1 0 0 1-.7 1.7H17"/><path d="M12 22v-3"/>""",
             "leaf"        => """<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>""",
-            "mountain"    => """<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>""",
+            "mountain"      => """<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>""",
+            "mountain-snow" => """<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/>""",
+            "moon"          => """<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>""",
             "waves"       => """<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>""",
             "compass"     => """<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>""",
             "house"       => """<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>""",
@@ -619,6 +1917,10 @@ else if (_gameState == GameState.Playing && _character != null)
             "shield"      => """<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>""",
             "scroll"      => """<path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4"/><path d="M19 3H4.5a2.5 2.5 0 0 0 0 5H12"/>""",
             "user"        => """<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>""",
+            "target"      => """<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>""",
+            "gem"         => """<path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/>""",
+            "bow"         => """<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/><path d="m5 9 3 3-3 3"/>""",
+            "potion"      => """<path d="M10 2v4.5L6 12v6a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-6l-4-5.5V2"/><path d="M8.5 2h7"/><path d="M7 15h10"/>""",
             _             => """<circle cx="12" cy="12" r="10"/>"""
         };
         return (MarkupString)$"""<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide{cls}">{path}</svg>""";

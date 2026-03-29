@@ -66,6 +66,37 @@
         </div>
     }
 
+    <div class="reset-scores-section mt-4">
+        <h2 class="retro-title">RESET SCORES</h2>
+        <div class="reset-cards">
+            @foreach (var game in ScoreService.Games)
+            {
+                var g = game;
+                <div class="reset-card">
+                    <div class="reset-card-name">@g.ToUpper()</div>
+                    @if (_resetTarget == g)
+                    {
+                        <div class="reset-card-prompt">
+                            <input class="reset-pw-input" type="password" placeholder="PASSWORD"
+                                   @bind="_resetPassword" @bind:event="oninput"
+                                   @onkeydown="@(async e => { if (e.Key == "Enter") await ConfirmReset(); })" />
+                            <button class="retro-btn retro-btn-danger retro-btn-sm" @onclick="ConfirmReset">OK</button>
+                            <button class="retro-btn retro-btn-sm" @onclick="CancelReset">X</button>
+                        </div>
+                        @if (_resetError != "")
+                        {
+                            <div class="reset-error">@_resetError</div>
+                        }
+                    }
+                    else
+                    {
+                        <button class="retro-btn retro-btn-danger retro-btn-sm" @onclick="() => StartReset(g)">RESET</button>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
     <div class="games-grid mt-4">
         <h2 class="retro-title">GAMES</h2>
         <div class="game-cards">
@@ -123,6 +154,40 @@
     private async Task LoadData()
     {
         leaderboard = await ScoreService.GetLeaderboardAsync();
+    }
+
+    private string? _resetTarget;
+    private string _resetPassword = "";
+    private string _resetError = "";
+
+    private void StartReset(string game)
+    {
+        _resetTarget = game;
+        _resetPassword = "";
+        _resetError = "";
+    }
+
+    private void CancelReset()
+    {
+        _resetTarget = null;
+        _resetPassword = "";
+        _resetError = "";
+    }
+
+    private async Task ConfirmReset()
+    {
+        if (_resetPassword != "dungeon")
+        {
+            _resetError = "WRONG PASSWORD";
+            _resetPassword = "";
+            return;
+        }
+        if (_resetTarget != null)
+        {
+            await ScoreService.ResetGameScoresAsync(_resetTarget);
+            await LoadData();
+        }
+        CancelReset();
     }
 
     public void Dispose()

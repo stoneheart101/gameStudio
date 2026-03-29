@@ -30,8 +30,21 @@ using (var scope = app.Services.CreateScope())
             UserId INTEGER NOT NULL,
             Name TEXT NOT NULL DEFAULT '',
             CreatedAt TEXT NOT NULL DEFAULT '0001-01-01 00:00:00',
+            Speed INTEGER NOT NULL DEFAULT 1,
+            Strength INTEGER NOT NULL DEFAULT 1,
+            Smarts INTEGER NOT NULL DEFAULT 1,
+            Agility INTEGER NOT NULL DEFAULT 1,
+            Toughness INTEGER NOT NULL DEFAULT 1,
+            Magic INTEGER NOT NULL DEFAULT 1,
+            Health INTEGER NOT NULL DEFAULT 1,
             FOREIGN KEY (UserId) REFERENCES Users(Id)
         )");
+    // Add stat columns to existing Characters tables
+    foreach (var col in new[] { "Speed", "Strength", "Smarts", "Agility", "Toughness", "Magic", "Health" })
+    {
+        try { db.Database.ExecuteSqlRaw("ALTER TABLE Characters ADD COLUMN " + col + " INTEGER NOT NULL DEFAULT 1"); }
+        catch { /* column already exists */ }
+    }
 }
 
 if (!app.Environment.IsDevelopment())

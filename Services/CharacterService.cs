@@ -12,9 +12,27 @@ public class CharacterService(AppDbContext db)
             .OrderBy(c => c.CreatedAt)
             .ToListAsync();
 
-    public async Task<Character> CreateCharacterAsync(int userId, string name)
+    public async Task DeleteCharacterAsync(int id)
     {
-        var character = new Character { UserId = userId, Name = name };
+        var c = await db.Characters.FindAsync(id);
+        if (c != null) { db.Characters.Remove(c); await db.SaveChangesAsync(); }
+    }
+
+    public async Task<Character> CreateCharacterAsync(int userId, string name,
+        int speed, int strength, int smarts, int agility, int toughness, int magic, int health)
+    {
+        var character = new Character
+        {
+            UserId = userId,
+            Name = name,
+            Speed = speed,
+            Strength = strength,
+            Smarts = smarts,
+            Agility = agility,
+            Toughness = toughness,
+            Magic = magic,
+            Health = health
+        };
         db.Characters.Add(character);
         await db.SaveChangesAsync();
         return character;

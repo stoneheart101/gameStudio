@@ -28,6 +28,13 @@ public class ScoreService(AppDbContext db)
             .OrderByDescending(s => s.Score)
             .FirstOrDefaultAsync();
 
+    public async Task ResetGameScoresAsync(string gameName)
+    {
+        var entries = await db.Scores.Where(s => s.GameName == gameName).ToListAsync();
+        db.Scores.RemoveRange(entries);
+        await db.SaveChangesAsync();
+    }
+
     public async Task<List<(User User, Dictionary<string, ScoreEntry?> Scores)>> GetLeaderboardAsync()
     {
         var users = await db.Users.OrderBy(u => u.Name).ToListAsync();

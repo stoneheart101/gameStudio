@@ -7,4 +7,16 @@ public class Character
     public User User { get; set; } = null!;
     public string Name { get; set; } = "";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Stats (16 points to distribute, min 1 each)
+    public int Speed { get; set; } = 1;
+    public int Strength { get; set; } = 1;
+    public int Smarts { get; set; } = 1;
+    public int Agility { get; set; } = 1;
+    public int Toughness { get; set; } = 1;
+    public int Magic { get; set; } = 1;
+    public int Health { get; set; } = 1;
+
+    // Derived: HP = Health * 5 + Toughness
+    public int MaxHitPoints => Health * 5 + Toughness;
 }
