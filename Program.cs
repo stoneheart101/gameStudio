@@ -15,6 +15,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<ScoreService>();
 builder.Services.AddScoped<UserSession>();
+builder.Services.AddScoped<CharacterService>();
 
 var app = builder.Build();
 
@@ -22,6 +23,15 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
+    // Add tables that may not exist in older databases
+    db.Database.ExecuteSqlRaw(@"
+        CREATE TABLE IF NOT EXISTS Characters (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            UserId INTEGER NOT NULL,
+            Name TEXT NOT NULL DEFAULT '',
+            CreatedAt TEXT NOT NULL DEFAULT '0001-01-01 00:00:00',
+            FOREIGN KEY (UserId) REFERENCES Users(Id)
+        )");
 }
 
 if (!app.Environment.IsDevelopment())

@@ -7,6 +7,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<ScoreEntry> Scores => Set<ScoreEntry>();
+    public DbSet<Character> Characters => Set<Character>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -14,5 +15,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasOne(s => s.User)
             .WithMany()
             .HasForeignKey(s => s.UserId);
+
+        modelBuilder.Entity<Character>()
+            .HasOne(c => c.User)
+            .WithMany()
+            .HasForeignKey(c => c.UserId);
     }
 }

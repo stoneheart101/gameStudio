@@ -1,0 +1,626 @@
+@page "/explorer"
+@rendermode InteractiveServer
+@inject UserSession UserSession
+@inject ScoreService ScoreService
+@inject CharacterService CharacterService
+@implements IDisposable
+
+<PageTitle>Explorer</PageTitle>
+
+@* ── Loading ── *@
+@if (_gameState == GameState.Loading)
+{
+    <div class="explorer-notice">
+        <div class="ex-notice-text">LOADING...</div>
+    </div>
+}
+
+@* ── No User ── *@
+else if (_gameState == GameState.NoUser)
+{
+    <div class="explorer-notice">
+        <div class="ex-notice-icon">@SvgIcon("shield", 52)</div>
+        <div class="ex-notice-text">THOU HAST NO PROFILE</div>
+        <div class="ex-notice-sub">Create a player profile to begin your quest</div>
+        <a href="/" class="ex-btn">@SvgIcon("arrow-left", 13) RETURN HOME</a>
+    </div>
+}
+
+@* ── Character Select ── *@
+else if (_gameState == GameState.CharSelect)
+{
+    <div class="explorer-charscreen">
+        <div class="ex-screen-ornament">⚔</div>
+        <div class="ex-screen-title">EXPLORER</div>
+        <div class="ex-screen-divider"></div>
+        <div class="ex-screen-subtitle">CHOOSE THY CHAMPION</div>
+
+        @if (_characters.Count == 0)
+        {
+            <div class="ex-no-chars">No champions found in this realm</div>
+        }
+        else
+        {
+            <div class="ex-char-list">
+                @foreach (var c in _characters)
+                {
+                    var character = c;
+                    <div class="ex-char-card" @onclick="() => SelectCharacter(character)">
+                        <span class="ex-char-card-icon">@SvgIcon("user", 18)</span>
+                        <span class="ex-char-card-name">@character.Name.ToUpper()</span>
+                        @SvgIcon("arrow-left", 13, "ex-char-card-arrow")
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="ex-btn-row">
+            <button class="ex-btn ex-btn-gold" @onclick="ShowCharCreate">
+                @SvgIcon("circle-plus", 13) FORGE NEW CHAMPION
+            </button>
+            <a href="/" class="ex-btn">
+                @SvgIcon("house", 13) RETREAT TO TOWN
+            </a>
+        </div>
+    </div>
+}
+
+@* ── Character Create ── *@
+else if (_gameState == GameState.CharCreate)
+{
+    <div class="explorer-charscreen">
+        <div class="ex-screen-ornament">⚔</div>
+        <div class="ex-screen-title">FORGE A CHAMPION</div>
+        <div class="ex-screen-divider"></div>
+        <div class="ex-screen-subtitle">ENTER THY NAME</div>
+
+        <input class="ex-input"
+               @bind="_newCharName"
+               @bind:event="oninput"
+               maxlength="20"
+               placeholder="CHAMPION NAME..."
+               @onkeydown="OnCreateKeyDown" />
+
+        @if (_createError != "")
+        {
+            <div class="ex-error">@SvgIcon("x", 11) @_createError</div>
+        }
+
+        <div class="ex-btn-row">
+            <button class="ex-btn ex-btn-gold" @onclick="CreateCharacter"
+                    disabled="@(string.IsNullOrWhiteSpace(_newCharName))">
+                @SvgIcon("sword", 13) CREATE
+            </button>
+            <button class="ex-btn" @onclick="() => _gameState = GameState.CharSelect">
+                @SvgIcon("arrow-left", 13) BACK
+            </button>
+        </div>
+    </div>
+}
+
+@* ── Playing ── *@
+else if (_gameState == GameState.Playing && _character != null)
+{
+    <div class="explorer-container">
+        <!-- Header -->
+        <div class="explorer-header">
+            <div class="ex-header-menu">
+                <a href="/" class="ex-btn ex-btn-sm">
+                    @SvgIcon("house", 12) HOME
+                </a>
+                <button class="ex-btn ex-btn-sm" @onclick="() => _showNewGameConfirm = true">
+                    @SvgIcon("rotate-ccw", 12) NEW GAME
+                </button>
+            </div>
+            <span class="explorer-title">EXPLORER</span>
+            <span class="explorer-header-char">
+                @SvgIcon("user", 11) @_character.Name.ToUpper()
+            </span>
+        </div>
+
+        <!-- Main three-column area -->
+        <div class="explorer-main">
+
+            <!-- Left: Stats + Inventory -->
+            <div class="explorer-left">
+                <div class="explorer-stats">
+                    <div class="explorer-panel-title">@SvgIcon("scroll", 10) STATS</div>
+                    <div class="explorer-stat-row">
+                        <span class="explorer-stat-label">NAME</span>
+                        <span class="explorer-stat-value">@_character.Name</span>
+                    </div>
+                    <div class="explorer-stat-row">
+                        <span class="explorer-stat-label">POSITION</span>
+                        <span class="explorer-stat-value">[@_playerX, @_playerY]</span>
+                    </div>
+                    <div class="explorer-stat-row">
+                        <span class="explorer-stat-label">TILES VISITED</span>
+                        <span class="explorer-stat-value">@_tilesVisited</span>
+                    </div>
+                </div>
+
+                <div class="explorer-inventory">
+                    <div class="explorer-panel-title">@SvgIcon("shield", 10) INVENTORY</div>
+                    <div class="inventory-grid">
+                        @for (int i = 0; i < 10; i++)
+                        {
+                            var item = i < _inventory.Count ? _inventory[i] : null;
+                            <div class="inv-slot @(item != null ? "inv-slot-filled" : "")"
+                                 title="@(item?.Name ?? "Empty")">
+                                @if (item != null)
+                                {
+                                    @SvgIcon(item.Icon, 18)
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center: 9×9 Map -->
+            <div class="explorer-map-area">
+                <div class="map-grid">
+                    @for (int row = -4; row <= 4; row++)
+                    {
+                        @for (int col = -4; col <= 4; col++)
+                        {
+                            var tx = _playerX + col;
+                            var ty = _playerY + row;
+                            bool isPlayer = (tx == _playerX && ty == _playerY);
+                            bool isAdjacent = !isPlayer && Math.Abs(col) <= 1 && Math.Abs(row) <= 1;
+                            var tile = GetDisplayTile(tx, ty);
+                            string tileClass = BuildTileClass(tile, isPlayer, isAdjacent);
+
+                            <div class="@tileClass"
+                                 title="@GetTileTooltip(tile, isPlayer)"
+                                 @onclick="() => OnTileClickAsync(tx, ty)">
+                                @if (isPlayer)
+                                {
+                                    @SvgIcon("compass", 20)
+                                }
+                                else if (tile?.Visited == true)
+                                {
+                                    @TileIconSvg(tile.Type)
+                                }
+                                else if (tile?.Revealed == true)
+                                {
+                                    <span class="tile-fog-icon">@TileIconSvg(tile.Type)</span>
+                                    <div class="tile-fog-overlay"></div>
+                                }
+                                else
+                                {
+                                    <span class="tile-unknown-glyph">▓</span>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="map-coords">[@_playerX, @_playerY]</div>
+            </div>
+
+            <!-- Right: Current Location -->
+            <div class="explorer-location">
+                <div class="explorer-panel-title">@SvgIcon("scroll", 10) LOCATION</div>
+                @{
+                    var curTile = GetDisplayTile(_playerX, _playerY);
+                    var curType = curTile?.Type ?? TileType.Grassland;
+                }
+                <div class="location-type-label">
+                    @TileIconSvg(curType) @curType.ToString().ToUpper()
+                </div>
+                <div class="location-desc">@TileDescription(curType)</div>
+
+                <div class="location-actions">
+                    <div class="explorer-panel-title">@SvgIcon("swords", 10) ACTIONS</div>
+                    <div class="location-hint">
+                        Click an adjacent tile to move there.
+                        <br /><br />
+                        Cliffs are passable but treacherous.
+                        Water cannot be crossed.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status bar -->
+        <div class="explorer-statusbar @(_statusExpanded ? "status-expanded" : "")">
+            <div class="status-bar-row">
+                <span class="status-last-msg">
+                    @(_statusHistory.Count > 0 ? _statusHistory[0] : "Ready to explore.")
+                </span>
+                <button class="status-toggle-btn" @onclick="ToggleStatus">
+                    @(_statusExpanded ? SvgIcon("chevron-up", 13) : SvgIcon("chevron-down", 13))
+                </button>
+            </div>
+            @if (_statusExpanded && _statusHistory.Count > 1)
+            {
+                <div class="status-history-list">
+                    @foreach (var msg in _statusHistory.Skip(1).Take(20))
+                    {
+                        <div class="status-history-entry">@msg</div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Confirm new game overlay -->
+    @if (_showNewGameConfirm)
+    {
+        <div class="ex-confirm-overlay" @onclick="() => _showNewGameConfirm = false">
+            <div class="ex-confirm-dialog" @onclick:stopPropagation>
+                <div class="ex-confirm-title">BEGIN ANEW?</div>
+                <div class="ex-confirm-text">
+                    All progress for <strong>@_character.Name.ToUpper()</strong> will be lost.<br />
+                    Choose a new champion to continue.
+                </div>
+                <div class="ex-confirm-btns">
+                    <button class="ex-btn ex-btn-danger" @onclick="ConfirmNewGame">
+                        @SvgIcon("rotate-ccw", 12) CONFIRM
+                    </button>
+                    <button class="ex-btn" @onclick="() => _showNewGameConfirm = false">
+                        @SvgIcon("x", 12) CANCEL
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    // ── Game state enum ──────────────────────────────────────────────────────
+    private enum GameState { Loading, NoUser, CharSelect, CharCreate, Playing }
+
+    // ── Tile system ──────────────────────────────────────────────────────────
+    private enum TileType { Forest, Grassland, Cliff, Water }
+
+    private class MapTile
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public TileType Type { get; set; }
+        public bool Visited { get; set; }
+        public bool Revealed { get; set; }
+    }
+
+    // ── Inventory ────────────────────────────────────────────────────────────
+    private record InventoryItem(string Name, string Icon);
+
+    // ── Terrain generation weights ───────────────────────────────────────────
+    private static readonly Dictionary<TileType, float> BaseWeights = new()
+    {
+        [TileType.Forest]    = 35f,
+        [TileType.Grassland] = 35f,
+        [TileType.Cliff]     = 15f,
+        [TileType.Water]     = 15f,
+    };
+
+    private static readonly Dictionary<TileType, float> ClusterBoost = new()
+    {
+        [TileType.Forest]    = 18f,
+        [TileType.Grassland] = 14f,
+        [TileType.Cliff]     = 22f,
+        [TileType.Water]     = 28f,
+    };
+
+    // ── State fields ─────────────────────────────────────────────────────────
+    private GameState _gameState = GameState.Loading;
+    private bool _initialized = false;
+    private bool _showNewGameConfirm = false;
+
+    private List<Character> _characters = [];
+    private Character? _character;
+    private string _newCharName = "";
+    private string _createError = "";
+
+    private Dictionary<(int, int), MapTile> _map = new();
+    private int _playerX = 0;
+    private int _playerY = 0;
+    private int _tilesVisited = 0;
+    private readonly Random _rng = new();
+
+    private List<InventoryItem> _inventory = [];
+    private List<string> _statusHistory = [];
+    private bool _statusExpanded = false;
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+    protected override void OnInitialized()
+    {
+        UserSession.OnChange += HandleUserChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _initialized) return;
+        _initialized = true;
+
+        if (UserSession.CurrentUser == null)
+        {
+            _gameState = GameState.NoUser;
+        }
+        else
+        {
+            await LoadCharacters();
+        }
+        StateHasChanged();
+    }
+
+    private void HandleUserChanged() => _ = InvokeAsync(async () =>
+    {
+        if (UserSession.CurrentUser == null)
+        {
+            _gameState = GameState.NoUser;
+            _character = null;
+        }
+        else
+        {
+            await LoadCharacters();
+        }
+        StateHasChanged();
+    });
+
+    private async Task LoadCharacters()
+    {
+        _characters = await CharacterService.GetCharactersAsync(UserSession.CurrentUser!.Id);
+        _gameState = GameState.CharSelect;
+    }
+
+    public void Dispose()
+    {
+        UserSession.OnChange -= HandleUserChanged;
+    }
+
+    // ── Character management ─────────────────────────────────────────────────
+    private void ShowCharCreate()
+    {
+        _newCharName = "";
+        _createError = "";
+        _gameState = GameState.CharCreate;
+    }
+
+    private async Task CreateCharacter()
+    {
+        var name = _newCharName.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        if (_characters.Any(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        {
+            _createError = "NAME ALREADY TAKEN";
+            return;
+        }
+
+        var c = await CharacterService.CreateCharacterAsync(UserSession.CurrentUser!.Id, name);
+        _characters.Add(c);
+        _newCharName = "";
+        _createError = "";
+        SelectCharacter(c);
+    }
+
+    private async Task OnCreateKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CreateCharacter();
+    }
+
+    private void SelectCharacter(Character c)
+    {
+        _character = c;
+        StartGame();
+    }
+
+    private void ConfirmNewGame()
+    {
+        _showNewGameConfirm = false;
+        _character = null;
+        _gameState = GameState.CharSelect;
+    }
+
+    // ── Game startup ─────────────────────────────────────────────────────────
+    private void StartGame()
+    {
+        _map = new();
+        _playerX = 0;
+        _playerY = 0;
+        _tilesVisited = 0;
+        _inventory = [new InventoryItem("Dagger", "sword")];
+        _statusHistory = ["Your adventure begins. The realm awaits."];
+
+        var start = GetOrGenerateTile(0, 0, forceType: TileType.Grassland);
+        MarkVisited(start);
+
+        _gameState = GameState.Playing;
+    }
+
+    // ── Map generation ───────────────────────────────────────────────────────
+    private MapTile GetOrGenerateTile(int x, int y, TileType? forceType = null)
+    {
+        if (_map.TryGetValue((x, y), out var existing)) return existing;
+
+        var type = forceType ?? GenerateTileType(x, y);
+        var tile = new MapTile { X = x, Y = y, Type = type };
+        _map[(x, y)] = tile;
+        return tile;
+    }
+
+    private TileType GenerateTileType(int x, int y)
+    {
+        var weights = BaseWeights.ToDictionary(kv => kv.Key, kv => kv.Value);
+
+        foreach (var (dx, dy) in Neighbors8)
+        {
+            if (_map.TryGetValue((x + dx, y + dy), out var neighbor))
+                weights[neighbor.Type] += ClusterBoost[neighbor.Type];
+        }
+
+        return WeightedRandom(weights);
+    }
+
+    private TileType WeightedRandom(Dictionary<TileType, float> weights)
+    {
+        float total = weights.Values.Sum();
+        float roll = (float)_rng.NextDouble() * total;
+        float acc = 0f;
+        foreach (var (type, w) in weights)
+        {
+            acc += w;
+            if (roll <= acc) return type;
+        }
+        return TileType.Grassland;
+    }
+
+    private static readonly (int dx, int dy)[] Neighbors8 =
+    [
+        (-1,-1), (0,-1), (1,-1),
+        (-1, 0),          (1, 0),
+        (-1, 1),  (0, 1), (1, 1),
+    ];
+
+    private void MarkVisited(MapTile tile)
+    {
+        if (!tile.Visited)
+        {
+            tile.Visited = true;
+            _tilesVisited++;
+        }
+        RevealSurroundings(tile.X, tile.Y);
+    }
+
+    private void RevealSurroundings(int x, int y)
+    {
+        foreach (var (dx, dy) in Neighbors8)
+        {
+            var neighbor = GetOrGenerateTile(x + dx, y + dy);
+            if (!neighbor.Visited)
+                neighbor.Revealed = true;
+        }
+    }
+
+    // ── Display helpers ───────────────────────────────────────────────────────
+    private MapTile? GetDisplayTile(int x, int y)
+    {
+        _map.TryGetValue((x, y), out var tile);
+        return tile;
+    }
+
+    private string BuildTileClass(MapTile? tile, bool isPlayer, bool isAdjacent)
+    {
+        if (isPlayer) return "map-tile tile-player";
+
+        var parts = new System.Text.StringBuilder("map-tile");
+
+        if (tile == null || (!tile.Visited && !tile.Revealed))
+        {
+            parts.Append(" tile-unknown");
+        }
+        else if (tile.Visited)
+        {
+            parts.Append(" tile-visited tile-type-");
+            parts.Append(tile.Type.ToString().ToLower());
+            if (isAdjacent) parts.Append(" tile-adjacent");
+        }
+        else
+        {
+            parts.Append(" tile-revealed tile-type-");
+            parts.Append(tile.Type.ToString().ToLower());
+            if (isAdjacent && tile.Type != TileType.Water) parts.Append(" tile-adjacent");
+        }
+
+        return parts.ToString();
+    }
+
+    private static MarkupString TileIconSvg(TileType type) => SvgIcon(type switch
+    {
+        TileType.Forest    => "tree-pine",
+        TileType.Grassland => "leaf",
+        TileType.Cliff     => "mountain",
+        TileType.Water     => "waves",
+        _                  => "compass"
+    }, 18);
+
+    private string GetTileTooltip(MapTile? tile, bool isPlayer)
+    {
+        if (isPlayer) return $"{_character?.Name ?? "You"} — current position";
+        if (tile == null || (!tile.Visited && !tile.Revealed)) return "Unexplored";
+        if (!tile.Visited) return $"{tile.Type} (unvisited)";
+        return tile.Type.ToString();
+    }
+
+    private static string TileDescription(TileType type) => type switch
+    {
+        TileType.Forest    => "Dense trees surround you. Shafts of light pierce the canopy. The air smells of pine and earth.",
+        TileType.Grassland => "Open plains stretch in all directions. A gentle breeze stirs the tall grass. Good ground to travel.",
+        TileType.Cliff     => "Jagged rock faces rise sharply. Loose stones crumble underfoot. Every step demands care.",
+        TileType.Water     => "Dark water stretches before you, too deep and cold to cross. You'll need to find another way.",
+        _                  => "You stand here, taking in the surroundings."
+    };
+
+    // ── Movement ─────────────────────────────────────────────────────────────
+    private void OnTileClickAsync(int tx, int ty)
+    {
+        if (_gameState != GameState.Playing) return;
+        if (tx == _playerX && ty == _playerY) return;
+
+        if (Math.Abs(tx - _playerX) > 1 || Math.Abs(ty - _playerY) > 1) return;
+
+        var tile = GetOrGenerateTile(tx, ty);
+
+        switch (tile.Type)
+        {
+            case TileType.Water:
+                PushStatus("The water is too deep to cross. You step back.");
+                return;
+
+            case TileType.Cliff:
+                PushStatus("You scramble up the rocky cliff face. The rough terrain is exhausting.");
+                break;
+
+            case TileType.Forest:
+                PushStatus("You push through the dense forest undergrowth.");
+                break;
+
+            case TileType.Grassland:
+                PushStatus("You stride across the open grassland.");
+                break;
+        }
+
+        _playerX = tx;
+        _playerY = ty;
+        MarkVisited(tile);
+    }
+
+    private void PushStatus(string message)
+    {
+        _statusHistory.Insert(0, message);
+        if (_statusHistory.Count > 50)
+            _statusHistory.RemoveAt(_statusHistory.Count - 1);
+    }
+
+    private void ToggleStatus() => _statusExpanded = !_statusExpanded;
+
+    // ── SVG icon helper ───────────────────────────────────────────────────────
+    private static MarkupString SvgIcon(string name, int size = 18, string? extraClass = null)
+    {
+        var cls = extraClass != null ? $" {extraClass}" : "";
+        var path = name switch
+        {
+            "tree-pine"   => """<path d="m17 14 3 3.3a1 1 0 0 1-.7 1.7H4.7a1 1 0 0 1-.7-1.7L7 14h-.3a1 1 0 0 1-.7-1.7L9 9h-.2A1 1 0 0 1 8 7.3L12 3l4 4.3a1 1 0 0 1-.8 1.7H15l3 3.3a1 1 0 0 1-.7 1.7H17"/><path d="M12 22v-3"/>""",
+            "leaf"        => """<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>""",
+            "mountain"    => """<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>""",
+            "waves"       => """<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>""",
+            "compass"     => """<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>""",
+            "house"       => """<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>""",
+            "rotate-ccw"  => """<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>""",
+            "chevron-down"=> """<path d="m6 9 6 6 6-6"/>""",
+            "chevron-up"  => """<path d="m18 15-6-6-6 6"/>""",
+            "sword"       => """<polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/>""",
+            "swords"      => """<polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" x2="9" y1="14" y2="18"/><line x1="7.5" x2="5.5" y1="11.5" y2="13.5"/><line x1="16.5" x2="18.5" y1="7.5" y2="5.5"/>""",
+            "circle-plus" => """<circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/>""",
+            "x"           => """<path d="M18 6 6 18"/><path d="m6 6 12 12"/>""",
+            "arrow-left"  => """<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>""",
+            "shield"      => """<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>""",
+            "scroll"      => """<path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4"/><path d="M19 3H4.5a2.5 2.5 0 0 0 0 5H12"/>""",
+            "user"        => """<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>""",
+            _             => """<circle cx="12" cy="12" r="10"/>"""
+        };
+        return (MarkupString)$"""<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide{cls}">{path}</svg>""";
+    }
+}
