@@ -1,0 +1,188 @@
+@page "/dodge"
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+@inject UserSession UserSession
+@inject ScoreService ScoreService
+@implements IAsyncDisposable
+@implements IDisposable
+
+<PageTitle>Dodge Dash - Game Studio</PageTitle>
+
+<div class="game-page">
+    <div class="game-page-header">
+        <a href="/" class="back-btn">← HOME</a>
+        <h1 class="retro-title">DODGE DASH</h1>
+    </div>
+
+    @if (!initialized)
+    {
+        <div class="retro-loading">LOADING...</div>
+    }
+    else if (UserSession.CurrentUser == null)
+    {
+        <div class="retro-notice">
+            <p>CREATE A PLAYER PROFILE FIRST</p>
+            <a href="/" class="retro-btn">GO HOME</a>
+        </div>
+    }
+    else if (gameState == "select")
+    {
+        <div class="char-select">
+            <p class="char-select-title">CHOOSE YOUR CHARACTER</p>
+            <div class="char-options">
+                <button class="char-btn" @onclick='() => StartGame("cat")'>
+                    <span class="char-emoji">🐱</span>
+                    <span class="char-label">CAT</span>
+                    <div class="char-stats">
+                        <div class="char-stat">
+                            <span class="stat-label">AGILITY</span>
+                            <div class="stat-bar"><div class="stat-fill stat-high"></div></div>
+                        </div>
+                        <div class="char-stat">
+                            <span class="stat-label">HEALTH</span>
+                            <div class="stat-bar"><div class="stat-fill stat-mid"></div></div>
+                        </div>
+                    </div>
+                </button>
+                <button class="char-btn" @onclick='() => StartGame("dog")'>
+                    <span class="char-emoji">🐶</span>
+                    <span class="char-label">DOG</span>
+                    <div class="char-stats">
+                        <div class="char-stat">
+                            <span class="stat-label">AGILITY</span>
+                            <div class="stat-bar"><div class="stat-fill stat-low"></div></div>
+                        </div>
+                        <div class="char-stat">
+                            <span class="stat-label">HEALTH</span>
+                            <div class="stat-bar"><div class="stat-fill stat-high"></div></div>
+                        </div>
+                    </div>
+                </button>
+            </div>
+            <p class="char-hint">USE ← → ARROW KEYS TO DODGE</p>
+        </div>
+    }
+    else
+    {
+        <div class="game-area">
+            <div class="game-player-info">
+                PLAYER: @UserSession.CurrentUser.AvatarEmoji @UserSession.CurrentUser.Name
+                @if (bestScore != null)
+                {
+                    <span class="best-score">| BEST: @bestScore.Score</span>
+                }
+            </div>
+
+            <div class="canvas-container">
+                <canvas id="dodgeCanvas" width="600" height="480"></canvas>
+
+                @if (gameState == "gameover")
+                {
+                    <div class="game-over-panel">
+                        <div class="game-over-content">
+                            <p class="game-over-title">GAME OVER</p>
+                            <p class="final-score">SCORE: @finalScore</p>
+                            @if (isNewBest)
+                            {
+                                <p class="new-best">★ NEW BEST! ★</p>
+                            }
+                            <div class="d-flex gap-2">
+                                <button class="retro-btn" @onclick="PlayAgain">PLAY AGAIN</button>
+                                <button class="retro-btn-secondary" @onclick="ChangeCharacter">CHANGE CHAR</button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="game-controls-hint">← → ARROW KEYS TO DODGE • AVOID 🌳 ROCKS • GRAB 🍣 FOR HEALTH</div>
+        </div>
+    }
+</div>
+
+@code {
+    private DotNetObjectReference<Dodge>? _dotNetRef;
+    private string gameState = "select";
+    private string selectedCharacter = "cat";
+    private int finalScore;
+    private bool isNewBest;
+    private bool initialized;
+    private bool gameStarted;
+    private ScoreEntry? bestScore;
+
+    protected override void OnInitialized()
+    {
+        UserSession.OnChange += HandleUserChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!initialized)
+        {
+            initialized = true;
+            StateHasChanged();
+            return;
+        }
+
+        if (!gameStarted && gameState == "playing" && UserSession.CurrentUser != null)
+        {
+            gameStarted = true;
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("initDodge", _dotNetRef, selectedCharacter);
+        }
+    }
+
+    private void HandleUserChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task StartGame(string character)
+    {
+        selectedCharacter = character;
+        gameStarted = false;
+        gameState = "playing";
+
+        if (UserSession.CurrentUser != null)
+            bestScore = await ScoreService.GetHighScoreAsync(UserSession.CurrentUser.Id, "Dodge");
+    }
+
+    [JSInvokable]
+    public async Task OnDodgeGameOver(int score)
+    {
+        finalScore = score;
+        gameState = "gameover";
+
+        if (UserSession.CurrentUser != null)
+        {
+            var prevBest = bestScore?.Score ?? -1;
+            await ScoreService.SaveScoreAsync(UserSession.CurrentUser.Id, "Dodge", score);
+            bestScore = await ScoreService.GetHighScoreAsync(UserSession.CurrentUser.Id, "Dodge");
+            isNewBest = score > prevBest;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PlayAgain()
+    {
+        gameState = "playing";
+        isNewBest = false;
+        await JS.InvokeVoidAsync("restartDodge", _dotNetRef, selectedCharacter);
+    }
+
+    private void ChangeCharacter()
+    {
+        gameState = "select";
+        gameStarted = false;
+        _ = JS.InvokeVoidAsync("destroyDodge");
+    }
+
+    public void Dispose()
+    {
+        UserSession.OnChange -= HandleUserChanged;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("destroyDodge"); } catch { }
+        _dotNetRef?.Dispose();
+    }
+}

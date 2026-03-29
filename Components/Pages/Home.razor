@@ -1,0 +1,127 @@
+@page "/"
+@rendermode InteractiveServer
+@inject ScoreService ScoreService
+@inject UserSession UserSession
+@implements IDisposable
+
+<PageTitle>Game Studio</PageTitle>
+
+<div class="home-page">
+    <h1 class="retro-title-large">GAME STUDIO</h1>
+    <p class="retro-subtitle">- LEADERBOARD -</p>
+
+    @if (leaderboard == null)
+    {
+        <div class="retro-loading">LOADING...</div>
+    }
+    else if (leaderboard.Count == 0)
+    {
+        <div class="retro-empty">NO PLAYERS YET</div>
+    }
+    else
+    {
+        <div class="leaderboard-table">
+            <div class="lb-header" style="@ColStyle">
+                <div class="lb-rank">RANK</div>
+                <div class="lb-player">PLAYER</div>
+                @foreach (var game in ScoreService.Games)
+                {
+                    <div class="lb-score">@game.ToUpper()</div>
+                }
+            </div>
+            @for (var i = 0; i < Sorted.Count; i++)
+            {
+                var row = Sorted[i];
+                var rank = i + 1;
+                var isCurrent = UserSession.CurrentUser?.Id == row.User.Id;
+                var totalScore = ScoreService.Games.Sum(g => row.Scores.GetValueOrDefault(g)?.Score ?? 0);
+                var isTop = rank == 1 && totalScore > 0;
+                <div class="lb-row @(isCurrent ? "current-player" : "") @(isTop ? "top-player" : "")"
+                     style="@ColStyle">
+                    <div class="lb-rank">
+                        @if (isTop) { <span class="trophy">👑</span> }
+                        else { <span>#@rank</span> }
+                    </div>
+                    <div class="lb-player">
+                        <span class="lb-avatar">@row.User.AvatarEmoji</span>
+                        <span class="lb-name">@row.User.Name @(isCurrent ? "(YOU)" : "")</span>
+                    </div>
+                    @foreach (var game in ScoreService.Games)
+                    {
+                        var entry = row.Scores.GetValueOrDefault(game);
+                        <div class="lb-score">
+                            @if (entry != null)
+                            {
+                                <span class="score-value">@entry.Score</span>
+                                <span class="score-date">@entry.PlayedAt.ToLocalTime().ToString("MM/dd/yy")</span>
+                            }
+                            else
+                            {
+                                <span class="score-empty">---</span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <div class="games-grid mt-4">
+        <h2 class="retro-title">GAMES</h2>
+        <div class="game-cards">
+            <a href="/flappy" class="game-card">
+                <div class="game-card-icon">🐦</div>
+                <div class="game-card-name">FLAPPY</div>
+                <div class="game-card-desc">DODGE THE PIPES</div>
+            </a>
+            <a href="/dodge" class="game-card">
+                <div class="game-card-icon">🐱</div>
+                <div class="game-card-name">DODGE DASH</div>
+                <div class="game-card-desc">RUN THE TRAIL</div>
+            </a>
+            <a href="/umm-food" class="game-card">
+                <div class="game-card-icon">🤿</div>
+                <div class="game-card-name">UMM FOOD</div>
+                <div class="game-card-desc">SURVIVE THE WHALES</div>
+            </a>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<(User User, Dictionary<string, ScoreEntry?> Scores)>? leaderboard;
+
+    private string ColStyle =>
+        $"grid-template-columns: 60px 1fr {string.Join(" ", ScoreService.Games.Select(_ => "130px"))};";
+
+    private List<(User User, Dictionary<string, ScoreEntry?> Scores)> Sorted =>
+        leaderboard?.OrderByDescending(r =>
+            ScoreService.Games.Sum(g => r.Scores.GetValueOrDefault(g)?.Score ?? 0)
+        ).ToList() ?? [];
+
+    protected override void OnInitialized()
+    {
+        UserSession.OnChange += HandleUserChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private void HandleUserChanged() => _ = InvokeAsync(async () =>
+    {
+        await LoadData();
+        StateHasChanged();
+    });
+
+    private async Task LoadData()
+    {
+        leaderboard = await ScoreService.GetLeaderboardAsync();
+    }
+
+    public void Dispose()
+    {
+        UserSession.OnChange -= HandleUserChanged;
+    }
+}

@@ -1,0 +1,185 @@
+@page "/umm-food"
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+@inject UserSession UserSession
+@inject ScoreService ScoreService
+@implements IAsyncDisposable
+@implements IDisposable
+
+<PageTitle>Umm Food - Game Studio</PageTitle>
+
+<div class="game-page">
+    <div class="game-page-header">
+        <a href="/" class="back-btn">← HOME</a>
+        <h1 class="retro-title">UMM FOOD</h1>
+    </div>
+
+    @if (!initialized)
+    {
+        <div class="retro-loading">LOADING...</div>
+    }
+    else if (UserSession.CurrentUser == null)
+    {
+        <div class="retro-notice">
+            <p>CREATE A PLAYER PROFILE FIRST</p>
+            <a href="/" class="retro-btn">GO HOME</a>
+        </div>
+    }
+    else if (gameState == "intro")
+    {
+        <div class="char-select">
+            <p class="char-select-title">UMM FOOD</p>
+            <div style="text-align:center; margin-bottom: 1.5rem; line-height: 2.2;">
+                <span style="font-size:2.5rem;">🤿</span>
+                <p style="font-size:0.5rem; color: var(--green); margin-top: 0.5rem;">YOU ARE A DIVER</p>
+                <p style="font-size:0.45rem; color: var(--dim); margin-top: 0.5rem; max-width: 340px; margin-left:auto; margin-right:auto;">
+                    A CRAZED MASTERMIND HAS UNLEASHED A SCHOOL OF KILLER WHALES.<br><br>
+                    MOTORBOATS WILL DAMAGE THE WHALES — WEAKENED WHALES SLOW DOWN.<br><br>
+                    EAT FISH TO RESTORE HEALTH. AVOID CORAL.
+                </p>
+            </div>
+            <div style="display:flex; gap:1rem; justify-content:center; align-items:center; margin-bottom:1rem;">
+                <div style="text-align:center;">
+                    <span style="font-size:1.5rem;">🐳</span>
+                    <p style="font-size:0.4rem; color:var(--dim);">WHALES HUNT YOU</p>
+                </div>
+                <div style="text-align:center;">
+                    <span style="font-size:1.5rem;">🚤</span>
+                    <p style="font-size:0.4rem; color:var(--dim);">BOATS HIT WHALES</p>
+                </div>
+                <div style="text-align:center;">
+                    <span style="font-size:1.5rem;">🐠</span>
+                    <p style="font-size:0.4rem; color:var(--dim);">FISH = HEALTH</p>
+                </div>
+                <div style="text-align:center;">
+                    <span style="font-size:1.5rem;">🪸</span>
+                    <p style="font-size:0.4rem; color:var(--dim);">AVOID CORAL</p>
+                </div>
+            </div>
+            <button class="retro-btn" @onclick="StartGame">DIVE IN</button>
+            <p class="char-hint">WASD OR ARROW KEYS TO SWIM</p>
+        </div>
+    }
+    else
+    {
+        <div class="game-area">
+            <div class="game-player-info">
+                PLAYER: @UserSession.CurrentUser.AvatarEmoji @UserSession.CurrentUser.Name
+                @if (bestScore != null)
+                {
+                    <span class="best-score">| BEST: @bestScore.Score</span>
+                }
+            </div>
+
+            <div class="canvas-container">
+                <canvas id="ummFoodCanvas" width="840" height="520"></canvas>
+
+                @if (gameState == "gameover")
+                {
+                    <div class="game-over-panel">
+                        <div class="game-over-content">
+                            <p class="game-over-title">GAME OVER</p>
+                            <p class="final-score">SCORE: @finalScore</p>
+                            @if (isNewBest)
+                            {
+                                <p class="new-best">★ NEW BEST! ★</p>
+                            }
+                            <div class="d-flex gap-2">
+                                <button class="retro-btn" @onclick="PlayAgain">PLAY AGAIN</button>
+                                <button class="retro-btn-secondary" @onclick="GoToIntro">MENU</button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="game-controls-hint">WASD / ARROWS TO SWIM • AVOID 🐋 WHALES & 🪸 CORAL • EAT 🐠 FISH</div>
+        </div>
+    }
+</div>
+
+@code {
+    private DotNetObjectReference<UmmFood>? _dotNetRef;
+    private string gameState = "intro";
+    private int finalScore;
+    private bool isNewBest;
+    private bool initialized;
+    private bool gameStarted;
+    private ScoreEntry? bestScore;
+
+    protected override void OnInitialized()
+    {
+        UserSession.OnChange += HandleUserChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!initialized)
+        {
+            initialized = true;
+            StateHasChanged();
+            return;
+        }
+
+        if (!gameStarted && gameState == "playing" && UserSession.CurrentUser != null)
+        {
+            gameStarted = true;
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("initUmmFood", _dotNetRef);
+        }
+    }
+
+    private void HandleUserChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task StartGame()
+    {
+        gameStarted = false;
+        gameState = "playing";
+
+        if (UserSession.CurrentUser != null)
+            bestScore = await ScoreService.GetHighScoreAsync(UserSession.CurrentUser.Id, "UmmFood");
+    }
+
+    [JSInvokable]
+    public async Task OnUmmFoodGameOver(int score)
+    {
+        finalScore = score;
+        gameState = "gameover";
+
+        if (UserSession.CurrentUser != null)
+        {
+            var prevBest = bestScore?.Score ?? -1;
+            await ScoreService.SaveScoreAsync(UserSession.CurrentUser.Id, "UmmFood", score);
+            bestScore = await ScoreService.GetHighScoreAsync(UserSession.CurrentUser.Id, "UmmFood");
+            isNewBest = score > prevBest;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PlayAgain()
+    {
+        gameState = "playing";
+        gameStarted = false;
+        isNewBest = false;
+        await JS.InvokeVoidAsync("restartUmmFood", _dotNetRef);
+    }
+
+    private void GoToIntro()
+    {
+        gameState = "intro";
+        gameStarted = false;
+        _ = JS.InvokeVoidAsync("destroyUmmFood");
+    }
+
+    public void Dispose()
+    {
+        UserSession.OnChange -= HandleUserChanged;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("destroyUmmFood"); } catch { }
+        _dotNetRef?.Dispose();
+    }
+}

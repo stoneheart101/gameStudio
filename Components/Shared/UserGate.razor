@@ -1,0 +1,160 @@
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+@inject UserSession UserSession
+@inject UserService UserService
+@implements IDisposable
+
+@* Overlay — fixed position so it covers the whole page *@
+@if (overlayState != "none")
+{
+    <div class="user-overlay">
+        <div class="user-panel">
+            @if (overlayState == "select")
+            {
+                <h2 class="retro-title">SELECT PLAYER</h2>
+                <div class="user-list">
+                    @foreach (var user in allUsers)
+                    {
+                        var u = user;
+                        <button class="user-select-btn @(UserSession.CurrentUser?.Id == u.Id ? "active" : "")"
+                                @onclick="() => SelectUser(u)">
+                            <span class="user-avatar">@u.AvatarEmoji</span>
+                            <span class="user-name">@u.Name</span>
+                        </button>
+                    }
+                </div>
+                <button class="retro-btn mt-3" @onclick="GoToCreate">+ NEW PLAYER</button>
+            }
+            else if (overlayState == "create")
+            {
+                <h2 class="retro-title">@(isFirstUser ? "PLAYER REGISTRATION" : "NEW PLAYER")</h2>
+                <div class="mb-3">
+                    <label class="retro-label">ENTER YOUR NAME:</label>
+                    <input class="retro-input" @bind="newName" @bind:event="oninput"
+                           maxlength="20" placeholder="YOUR NAME" />
+                </div>
+                <div class="mb-3">
+                    <label class="retro-label">CHOOSE AVATAR:</label>
+                    <div class="avatar-grid">
+                        @foreach (var av in AvatarOptions)
+                        {
+                            var avatar = av;
+                            <button class="avatar-btn @(newAvatar == avatar ? "selected" : "")"
+                                    @onclick="() => newAvatar = avatar">@avatar</button>
+                        }
+                    </div>
+                </div>
+                @if (createError != "")
+                {
+                    <div class="retro-error">@createError</div>
+                }
+                <div class="d-flex gap-2 mt-3">
+                    <button class="retro-btn" @onclick="CreateUser"
+                            disabled="@(string.IsNullOrWhiteSpace(newName))">
+                        CREATE PLAYER
+                    </button>
+                    @if (!isFirstUser)
+                    {
+                        <button class="retro-btn-secondary" @onclick='() => overlayState = "select"'>BACK</button>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@* Floating player indicator — top right corner *@
+@if (UserSession.CurrentUser != null)
+{
+    <div class="player-badge">
+        <span class="player-badge-avatar">@UserSession.CurrentUser.AvatarEmoji</span>
+        <span class="player-badge-name">@UserSession.CurrentUser.Name</span>
+        <button class="player-badge-change" @onclick="ShowSelect" title="Switch player">⇄</button>
+    </div>
+}
+
+@code {
+    private static readonly string[] AvatarOptions =
+    [
+        "🦊", "🐸", "🐧", "🦄", "🐉", "🤖", "👾", "🦸",
+        "🐱", "🐻", "🐯", "🐼", "🦁", "🐮", "🐙", "🐺",
+        "🦋", "🐬", "🦅", "🎃"
+    ];
+
+    private string overlayState = "none";
+    private bool isFirstUser = false;
+    private List<User> allUsers = [];
+    private string newName = "";
+    private string newAvatar = "🦊";
+    private string createError = "";
+    private bool initialized = false;
+
+    protected override void OnInitialized()
+    {
+        UserSession.OnChange += HandleUserChanged;
+    }
+
+    private void HandleUserChanged() => _ = InvokeAsync(StateHasChanged);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || initialized) return;
+        initialized = true;
+
+        var stored = await JS.InvokeAsync<string?>("localStorage.getItem", "userId");
+        if (int.TryParse(stored, out var id))
+        {
+            var user = await UserService.GetUserByIdAsync(id);
+            if (user != null)
+            {
+                await UserService.UpdateLastVisitAsync(id);
+                user.LastVisit = DateTime.UtcNow;
+                UserSession.SetUser(user);
+                return;
+            }
+        }
+
+        isFirstUser = true;
+        overlayState = "create";
+        StateHasChanged();
+    }
+
+    private async Task ShowSelect()
+    {
+        allUsers = await UserService.GetAllUsersAsync();
+        overlayState = "select";
+    }
+
+    private void GoToCreate()
+    {
+        newName = "";
+        newAvatar = "🦊";
+        createError = "";
+        isFirstUser = false;
+        overlayState = "create";
+    }
+
+    private async Task SelectUser(User user)
+    {
+        await UserService.UpdateLastVisitAsync(user.Id);
+        user.LastVisit = DateTime.UtcNow;
+        UserSession.SetUser(user);
+        await JS.InvokeVoidAsync("localStorage.setItem", "userId", user.Id.ToString());
+        overlayState = "none";
+    }
+
+    private async Task CreateUser()
+    {
+        if (string.IsNullOrWhiteSpace(newName)) return;
+        createError = "";
+        var user = await UserService.CreateUserAsync(newName, newAvatar);
+        UserSession.SetUser(user);
+        await JS.InvokeVoidAsync("localStorage.setItem", "userId", user.Id.ToString());
+        overlayState = "none";
+    }
+
+    public void Dispose()
+    {
+        UserSession.OnChange -= HandleUserChanged;
+    }
+}
