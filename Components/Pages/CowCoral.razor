@@ -1,0 +1,131 @@
+@page "/cow-coral"
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+@inject UserSession UserSession
+@inject ScoreService ScoreService
+@implements IAsyncDisposable
+@implements IDisposable
+
+<PageTitle>Cow Coral - Game Studio</PageTitle>
+
+<div class="game-page">
+    <div class="game-page-header">
+        <a href="/" class="back-btn">← HOME</a>
+        <h1 class="retro-title">COW CORAL</h1>
+    </div>
+
+    @if (!_initialized)
+    {
+        <div class="retro-loading">LOADING...</div>
+    }
+    else if (UserSession.CurrentUser == null)
+    {
+        <div class="retro-notice">
+            <p>CREATE A PLAYER PROFILE FIRST</p>
+            <a href="/" class="retro-btn">GO HOME</a>
+        </div>
+    }
+    else
+    {
+        <div class="game-area">
+            <div class="game-player-info">
+                PLAYER: @UserSession.CurrentUser.AvatarEmoji @UserSession.CurrentUser.Name
+                @if (_bestScore != null)
+                {
+                    <span class="best-score">| BEST: @_bestScore.Score</span>
+                }
+            </div>
+
+            <div class="canvas-container">
+                <canvas id="cowCoralCanvas" width="800" height="560"></canvas>
+
+                @if (_gameState == "gameover")
+                {
+                    <div class="game-over-panel">
+                        <div class="game-over-content">
+                            <p class="game-over-title">GAME OVER</p>
+                            <p class="final-score">SCORE: @_finalScore</p>
+                            @if (_isNewBest)
+                            {
+                                <p class="new-best">★ NEW BEST! ★</p>
+                            }
+                            <button class="retro-btn" @onclick="PlayAgain">PLAY AGAIN</button>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="game-controls-hint">WASD / ARROWS TO RIDE · RIDE OVER HAY TO PICK IT UP · LEAD COWS INTO THE PEN</div>
+        </div>
+    }
+</div>
+
+@code {
+    private DotNetObjectReference<CowCoral>? _dotNetRef;
+    private string _gameState = "playing";
+    private int _finalScore;
+    private bool _isNewBest;
+    private bool _initialized;
+    private bool _gameStarted;
+    private ScoreEntry? _bestScore;
+
+    protected override void OnInitialized()
+    {
+        UserSession.OnChange += HandleUserChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_initialized)
+        {
+            _initialized = true;
+            StateHasChanged();
+            return;
+        }
+
+        if (!_gameStarted && UserSession.CurrentUser != null)
+        {
+            _gameStarted = true;
+            _bestScore = await ScoreService.GetHighScoreAsync(UserSession.CurrentUser.Id, "CowCoral");
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("initCowCoral", _dotNetRef);
+        }
+    }
+
+    private void HandleUserChanged() => _ = InvokeAsync(StateHasChanged);
+
+    [JSInvokable]
+    public async Task OnGameOver(int score)
+    {
+        _finalScore = score;
+        _gameState  = "gameover";
+
+        if (UserSession.CurrentUser != null)
+        {
+            var prevBest = _bestScore?.Score ?? -1;
+            await ScoreService.SaveScoreAsync(UserSession.CurrentUser.Id, "CowCoral", score);
+            _bestScore  = await ScoreService.GetHighScoreAsync(UserSession.CurrentUser.Id, "CowCoral");
+            _isNewBest  = score > prevBest;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PlayAgain()
+    {
+        _gameState = "playing";
+        _isNewBest = false;
+        await JS.InvokeVoidAsync("restartCowCoral", _dotNetRef);
+    }
+
+    public void Dispose()
+    {
+        UserSession.OnChange -= HandleUserChanged;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("destroyCowCoral"); } catch { }
+        _dotNetRef?.Dispose();
+    }
+}
