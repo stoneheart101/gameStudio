@@ -15,7 +15,12 @@
       "Bash(gh repo:*)",
       "mcp__better-icons__search_icons",
       "mcp__better-icons__get_icons",
-      "mcp__better-icons__get_icon"
+      "mcp__better-icons__get_icon",
+      "Bash(sed -n '2270,2320p' /home/stoneclaude/claudeTest/gameStudio/wwwroot/css/app.css)",
+      "Bash(sed -n '2475,2525p' /home/stoneclaude/claudeTest/gameStudio/wwwroot/css/app.css)",
+      "Bash(sed -n '2560,2575p' /home/stoneclaude/claudeTest/gameStudio/wwwroot/css/app.css)",
+      "Bash(sed -n '2865,2880p' /home/stoneclaude/claudeTest/gameStudio/wwwroot/css/app.css)",
+      "Bash(python3:*)"
     ]
   }
 }

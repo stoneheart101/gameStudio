@@ -369,7 +369,7 @@ body::after {
 
 .lb-row.current-player {
     background: #050518;
-    border-left: 3px solid var(--cyan);
+    box-shadow: inset 3px 0 0 var(--cyan);
 }
 
 .lb-row.top-player .lb-name { color: var(--gold); }
@@ -401,6 +401,15 @@ body::after {
     display: flex;
     flex-direction: column;
     gap: 2px;
+}
+
+.lb-score.lb-score-header {
+    gap: 5px;
+    justify-content: center;
+}
+
+.reset-pw-inline {
+    width: 55px !important;
 }
 
 .score-value {
@@ -2128,7 +2137,7 @@ body:has(.explorer-container) .player-badge {
 }
 
 .fw-panel-label {
-    font-size: 9px;
+    font-size: 12px;
     letter-spacing: 4px;
     text-transform: uppercase;
     color: #7a6d56;
@@ -2152,6 +2161,13 @@ body:has(.explorer-container) .player-badge {
     padding: 6px 8px;
     min-height: 0;
 }
+@keyframes fw-map-slide-in {
+    from { transform: translateY(-33.33%); }
+    to   { transform: translateY(0); }
+}
+.fw-map-area.is-sliding {
+    animation: fw-map-slide-in 0.32s ease-out;
+}
 
 .fw-map-rect {
     border: 2px solid #c8b99a;
@@ -2169,18 +2185,27 @@ body:has(.explorer-container) .player-badge {
     pointer-events: none;
 }
 /* Player's current position */
-@keyframes fw-player-pulse {
-    0%, 100% { box-shadow: 0 0 6px 1px rgba(200, 168, 107, 0.5), 2px 2px 0 #080604; }
-    50%       { box-shadow: 0 0 18px 4px rgba(200, 168, 107, 0.9), 2px 2px 0 #080604; }
-}
 .fw-map-rect.is-player {
-    background: #2a1c08 !important;
-    border-color: #e8c87a !important;
-    border-width: 2px !important;
-    animation: fw-player-pulse 1.4s ease-in-out infinite;
+    box-shadow: inset 0 0 12px 5px rgba(200, 168, 107, 0.65), 2px 2px 0 #080604;
 }
 .fw-map-rect.is-player::after {
     border-color: rgba(232, 200, 122, 0.5);
+}
+/* Quest goal marker */
+.fw-map-rect.has-quest-goal {
+    position: relative;
+}
+.fw-map-rect.has-quest-goal::before {
+    content: '!';
+    position: absolute;
+    top: 0px;
+    right: 4px;
+    font-size: 15px;
+    color: #e8c87a;
+    font-weight: bold;
+    z-index: 2;
+    line-height: 1;
+    text-shadow: 0 0 6px rgba(200, 168, 107, 1.0);
 }
 /* Reachable (valid move target) */
 .fw-map-rect.is-reachable {
@@ -2200,7 +2225,7 @@ body:has(.explorer-container) .player-badge {
 }
 
 .fw-char-name {
-    font-size: 15px;
+    font-size: 18px;
     font-weight: bold;
     letter-spacing: 3px;
     text-align: center;
@@ -2318,12 +2343,12 @@ body:has(.forward-page) .player-badge { display: none; }
 }
 .fw-inv-icon svg { display: block; }
 
-/* Tooltip — appears in the adjacent slot's space */
+/* Tooltip — spans two slot widths to reduce wrapping */
 .fw-inv-tip {
     display: none;
     position: absolute;
     top: 0;
-    width: 100%;
+    width: 200%;
     background: #111;
     border: 2px solid #e5d5b8;
     padding: 7px 9px;
@@ -2345,7 +2370,7 @@ body:has(.forward-page) .player-badge { display: none; }
 }
 
 .fw-inv-tip-name {
-    font-size: 11px;
+    font-size: 14px;
     font-weight: bold;
     color: #c8a86b;
     letter-spacing: 1px;
@@ -2354,14 +2379,26 @@ body:has(.forward-page) .player-badge { display: none; }
     padding-bottom: 3px;
 }
 .fw-inv-tip-desc {
-    font-size: 10px;
+    font-size: 13px;
     color: #b0a080;
     margin-bottom: 4px;
 }
 .fw-inv-tip-uses {
-    font-size: 10px;
+    font-size: 13px;
     color: #7a6d56;
     font-style: italic;
+}
+.fw-inv-tip-pack-label {
+    font-size: 13px;
+    color: #c8a86b;
+    letter-spacing: 1px;
+    margin-bottom: 3px;
+    margin-top: 2px;
+}
+.fw-inv-tip-pack-item {
+    font-size: 13px;
+    color: #b0a080;
+    line-height: 1.6;
 }
 
 /* ── BOTTOM SECTION ──────────────────────────────────────────────────── */
@@ -2396,7 +2433,7 @@ body:has(.forward-page) .player-badge { display: none; }
     position: relative;
     z-index: 1;
     padding: 6px 14px;
-    font-size: 11px;
+    font-size: 14px;
     letter-spacing: 2px;
     border-bottom: 1px solid #2e2518;
     background: rgba(17, 17, 17, 0.92);
@@ -2433,7 +2470,7 @@ body:has(.forward-page) .player-badge { display: none; }
 
 .fw-stub-text {
     color: #3a3020;
-    font-size: 11px;
+    font-size: 14px;
     font-style: italic;
     letter-spacing: 1px;
     margin: 0;
@@ -2458,7 +2495,7 @@ body:has(.forward-page) .player-badge { display: none; }
     color: #e5d5b8;
     border: 2px solid #e5d5b8;
     font-family: 'Courier New', Courier, monospace;
-    font-size: 10px;
+    font-size: 13px;
     letter-spacing: 2px;
     padding: 5px 12px;
     text-transform: uppercase;
@@ -2491,7 +2528,7 @@ body:has(.forward-page) .player-badge { display: none; }
     border-top: 3px solid #e5d5b8;
     background: #111;
     flex-shrink: 0;
-    font-size: 10px;
+    font-size: 13px;
     letter-spacing: 1px;
 }
 
@@ -2505,7 +2542,7 @@ body:has(.forward-page) .player-badge { display: none; }
 
 .fw-sb-label {
     color: #7a6d56;
-    font-size: 9px;
+    font-size: 12px;
     letter-spacing: 2px;
     flex-shrink: 0;
 }
@@ -2525,14 +2562,14 @@ body:has(.forward-page) .player-badge { display: none; }
 
 .fw-sb-nums {
     color: #7a6d56;
-    font-size: 9px;
+    font-size: 12px;
     white-space: nowrap;
 }
 
 .fw-sb-level {
     color: #c8a86b;
     font-weight: bold;
-    font-size: 11px;
+    font-size: 14px;
     letter-spacing: 2px;
     white-space: nowrap;
 }
@@ -2570,8 +2607,13 @@ body:has(.forward-page) .player-badge { display: none; }
     justify-content: center;
     width: 100%;
     height: 100%;
-    opacity: 0.7;
+    opacity: 0.25;
+    filter: saturate(0.1);
     pointer-events: none;
+}
+.fw-map-rect.is-visited .fw-map-icon {
+    opacity: 1;
+    filter: none;
 }
 .fw-map-icon svg {
     width: 28px;
@@ -2601,14 +2643,14 @@ body:has(.forward-page) .player-badge { display: none; }
     gap: 6px;
 }
 .fw-area-name {
-    font-size: 16px;
+    font-size: 20px;
     font-weight: bold;
     letter-spacing: 4px;
     color: #e5d5b8;
     text-transform: uppercase;
 }
 .fw-area-desc {
-    font-size: 12px;
+    font-size: 15px;
     color: #b0a080;
     line-height: 1.6;
     font-style: italic;
@@ -2697,9 +2739,25 @@ body:has(.forward-page) .player-badge { display: none; }
     display: flex;
     align-items: center;
     gap: 5px;
-    padding: 3px 8px 3px 5px;
+    padding: 4px 10px 4px 6px;
     border: 1px solid #3a3020;
     background: #0e0c0a;
+    cursor: pointer;
+    font-family: 'Courier New', Courier, monospace;
+    text-transform: uppercase;
+    transition: none;
+    box-shadow: 1px 1px 0 #080604;
+}
+.fw-subarea-item:hover {
+    background: #1a1408;
+    border-color: #c8a86b;
+    box-shadow: none;
+    transform: translate(1px, 1px);
+}
+.fw-subarea-item:active {
+    background: #2a1c08;
+    transform: translate(1px, 1px);
+    box-shadow: none;
 }
 .fw-subarea-icon {
     display: flex;
@@ -2712,14 +2770,124 @@ body:has(.forward-page) .player-badge { display: none; }
     display: block;
 }
 .fw-subarea-name {
-    font-size: 10px;
+    font-size: 13px;
     color: #c8a86b;
     letter-spacing: 1px;
     white-space: nowrap;
+}
+.fw-subarea-action {
+    font-size: 11px;
+    color: #7a6a50;
+    letter-spacing: 1px;
+    margin-left: 6px;
+    white-space: nowrap;
+}
+/* Sub-area leave button */
+.fw-btn-leave {
+    margin-top: 10px;
+    font-size: 11px;
+}
+/* Quest offer box */
+.fw-quest-offer {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border: 1px solid #c8a86b;
+    background: #0a0806;
+}
+.fw-quest-offer-title {
+    font-size: 13px;
+    color: #e8c87a;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+}
+.fw-quest-offer-text {
+    font-size: 11px;
+    color: #9a8a6a;
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+.fw-quest-offer-btns {
+    display: flex;
+    gap: 6px;
+}
+/* Quest complete banner */
+.fw-quest-complete {
+    margin-top: 10px;
+    padding: 6px 10px;
+    background: #0a0806;
+    border: 1px solid #4a8a30;
+    font-size: 11px;
+    color: #7ac850;
+    letter-spacing: 1px;
+}
+/* Skill list in character panel */
+.fw-skills-list {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 0;
+}
+.fw-skill-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px;
+    border-bottom: 1px solid #1a1408;
+}
+.fw-skill-name {
+    flex: 1;
+    font-size: 14px;
+    color: #9a8a6a;
+    letter-spacing: 0.5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.fw-skill-uses {
+    font-size: 14px;
+    color: #c8a86b;
+    min-width: 14px;
+    text-align: right;
+}
+.fw-skill-momentum {
+    font-size: 13px;
+    color: #6ab040;
+    min-width: 16px;
+}
+/* Quest log in character panel */
+.fw-quest-log {
+    width: 100%;
+    margin-top: 6px;
+    border-top: 1px solid #2a2010;
+    padding-top: 4px;
+}
+.fw-quest-log-label {
+    font-size: 10px;
+    color: #c8a86b;
+    letter-spacing: 2px;
+    margin-bottom: 3px;
+}
+.fw-quest-entry {
+    display: flex;
+    gap: 4px;
+    padding: 2px 0;
+    font-size: 9px;
+    overflow: hidden;
+}
+.fw-quest-type {
+    color: #7a6a50;
+    flex-shrink: 0;
+}
+.fw-quest-title {
+    color: #9a8a6a;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 /* ── Responsive: shrink map rects on small screens ───────────────────── */
 @media (max-width: 900px) {
     .fw-map-area { gap: 3px; padding: 4px 6px; }
-    .fw-char-name { font-size: 12px; }
+    .fw-char-name { font-size: 15px; }
 }

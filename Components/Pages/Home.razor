@@ -26,7 +26,28 @@
                 <div class="lb-player">PLAYER</div>
                 @foreach (var game in ScoreService.Games)
                 {
-                    <div class="lb-score">@game.ToUpper()</div>
+                    var g = game;
+                    <div class="lb-score lb-score-header">
+                        <span>@g.ToUpper()</span>
+                        @if (_resetTarget == g)
+                        {
+                            <div class="reset-card-prompt">
+                                <input class="reset-pw-input reset-pw-inline" type="password" placeholder="PW"
+                                       @bind="_resetPassword" @bind:event="oninput"
+                                       @onkeydown="@(async e => { if (e.Key == "Enter") await ConfirmReset(); })" />
+                                <button class="retro-btn retro-btn-danger retro-btn-sm" @onclick="ConfirmReset">OK</button>
+                                <button class="retro-btn retro-btn-sm" @onclick="CancelReset">X</button>
+                            </div>
+                            @if (_resetError != "")
+                            {
+                                <div class="reset-error">@_resetError</div>
+                            }
+                        }
+                        else
+                        {
+                            <button class="retro-btn retro-btn-danger retro-btn-sm" @onclick="() => StartReset(g)">RESET</button>
+                        }
+                    </div>
                 }
             </div>
             @for (var i = 0; i < Sorted.Count; i++)
@@ -65,37 +86,6 @@
             }
         </div>
     }
-
-    <div class="reset-scores-section mt-4">
-        <h2 class="retro-title">RESET SCORES</h2>
-        <div class="reset-cards">
-            @foreach (var game in ScoreService.Games)
-            {
-                var g = game;
-                <div class="reset-card">
-                    <div class="reset-card-name">@g.ToUpper()</div>
-                    @if (_resetTarget == g)
-                    {
-                        <div class="reset-card-prompt">
-                            <input class="reset-pw-input" type="password" placeholder="PASSWORD"
-                                   @bind="_resetPassword" @bind:event="oninput"
-                                   @onkeydown="@(async e => { if (e.Key == "Enter") await ConfirmReset(); })" />
-                            <button class="retro-btn retro-btn-danger retro-btn-sm" @onclick="ConfirmReset">OK</button>
-                            <button class="retro-btn retro-btn-sm" @onclick="CancelReset">X</button>
-                        </div>
-                        @if (_resetError != "")
-                        {
-                            <div class="reset-error">@_resetError</div>
-                        }
-                    }
-                    else
-                    {
-                        <button class="retro-btn retro-btn-danger retro-btn-sm" @onclick="() => StartReset(g)">RESET</button>
-                    }
-                </div>
-            }
-        </div>
-    </div>
 
     <div class="games-grid mt-4">
         <h2 class="retro-title">GAMES</h2>
