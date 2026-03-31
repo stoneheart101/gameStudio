@@ -58,8 +58,8 @@
                                     <div class="fw-map-rect @stateCls at-@info.CssClass"
                                          style="grid-column:@(colStart) / span 2; grid-row:@rowNum;"
                                          @onclick="() => OnMapRectClick(r, c)">
-                                        <span class="fw-map-icon" style="color:@info.IconColor;">
-                                            @((MarkupString)info.Icon)
+                                        <span class="fw-map-icon" style="color:@(isPlayer ? "#e8c87a" : info.IconColor);">
+                                            @((MarkupString)(isPlayer ? IconPlayer : info.Icon))
                                         </span>
                                     </div>
                                 }
@@ -146,7 +146,7 @@
                     @{
                         var curInfo = GetCurrentAreaInfo();
                     }
-                    @if (curInfo != null && areaPath.Count == 1)
+                    @if (areaPath.Count == 1 && curInfo != null)
                     {
                         <div class="fw-area-info">
                             <div class="fw-area-icon" style="color:@curInfo.IconColor;">
@@ -155,21 +155,49 @@
                             <div class="fw-area-text">
                                 <div class="fw-area-name">@curInfo.Name.ToUpper()</div>
                                 <div class="fw-area-desc">@curInfo.Description</div>
+                                @if (currentSubAreas.Count > 0)
+                                {
+                                    <div class="fw-subareas">
+                                        @foreach (var sub in currentSubAreas)
+                                        {
+                                            <div class="fw-subarea-item">
+                                                <span class="fw-subarea-icon" style="color:@sub.IconColor;">@((MarkupString)sub.Icon)</span>
+                                                <span class="fw-subarea-name">@sub.Name</span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
                             </div>
                         </div>
                     }
-                    else
+                    else if (areaPath.Count > 1 && activeSubArea != null)
                     {
-                        <p class="fw-stub-text">[ sub-area &mdash; coming soon ]</p>
+                        <div class="fw-area-info">
+                            <div class="fw-area-icon" style="color:@activeSubArea.IconColor;">
+                                @((MarkupString)activeSubArea.Icon)
+                            </div>
+                            <div class="fw-area-text">
+                                <div class="fw-area-name">@activeSubArea.Name.ToUpper()</div>
+                                <div class="fw-area-desc">@activeSubArea.Description</div>
+                                <p class="fw-stub-text">[ deeper exploration &mdash; coming soon ]</p>
+                            </div>
+                        </div>
                     }
                 </div>
 
                 <div class="fw-action-bar">
                     @if (areaPath.Count == 1)
                     {
-                        <button class="fw-btn" @onclick="Explore">EXPLORE</button>
+                        @foreach (var sub in currentSubAreas)
+                        {
+                            var s = sub;
+                            <button class="fw-btn" @onclick="() => EnterSubArea(s)">@s.ActionLabel</button>
+                        }
                     }
-                    <button class="fw-btn">LOOK AROUND</button>
+                    else
+                    {
+                        <button class="fw-btn" @onclick="() => NavigateToCrumb(0)">&#8592; LEAVE</button>
+                    }
                 </div>
             </div><!-- /fw-bottom -->
 
@@ -256,6 +284,63 @@
         [AreaType.DeepSwamp]  = new("Deep Swamp",    "deepswamp",  IconSwamp,  "#2a4a14", "Black water and rotting wood. Something ancient lurks in the depths."),
     };
 
+    // ── Sub-area system ────────────────────────────────────────────────
+    private record SubArea(string Key, string Name, string Icon, string IconColor, string Description, string ActionLabel);
+
+    private static readonly Dictionary<AreaType, SubArea[]> SubAreaPool = new()
+    {
+        [AreaType.Grass] = [
+            new("camp",    "Wayfarers' Camp",    IconTent,       "#c8a86b", "Smoldering embers and worn bedrolls. Travelers passed through here recently.",            "ENTER CAMP"),
+            new("farm",    "Abandoned Farmstead", IconFarm,      "#8a6a40", "Crumbling stone walls and fields gone to seed. Something was left behind.",              "SEARCH FARMSTEAD"),
+            new("hollow",  "Hidden Hollow",       IconGrass,     "#6a9a40", "Tall grass parts around a sheltered dip in the earth. Quiet. Hidden.",                  "ENTER HOLLOW"),
+        ],
+        [AreaType.Forest] = [
+            new("grove",   "Ancient Grove",       IconTree,      "#3a7a28", "Enormous trees form a living cathedral. The air tastes of centuries.",                   "ENTER GROVE"),
+            new("shrine",  "Forest Shrine",       IconRuins,     "#c8a86b", "A moss-covered stone basin filled with old offerings. Something still lingers here.",   "APPROACH SHRINE"),
+            new("cave",    "Cave Entrance",        IconCave,      "#7a7a7a", "Darkness yawns beneath a mossy overhang. Cold air breathes out from within.",           "ENTER CAVE"),
+        ],
+        [AreaType.DeepForest] = [
+            new("clearing","Witch's Clearing",    IconSkull,     "#8a50a0", "A perfect circle of dead grass in the trees. No birds sing here. The air is wrong.",    "ENTER CLEARING"),
+            new("cave",    "Dark Cave",            IconCave,      "#4a4a4a", "The cave mouth is wide here. Old claw marks score the stone around the entrance.",      "ENTER CAVE"),
+            new("shrine",  "Lost Shrine",          IconRuins,     "#7a6a30", "Sunken into the earth, half-claimed by roots. The inscriptions are unreadable.",        "INVESTIGATE SHRINE"),
+        ],
+        [AreaType.Lake] = [
+            new("dock",    "Fishing Dock",         IconAnchor,    "#3a6ab0", "Rotting planks and a rusted iron ring. A boat was moored here not long ago.",           "APPROACH DOCK"),
+            new("ruins",   "Sunken Ruins",         IconRuins,     "#5a7a9a", "Dark shapes beneath the water's surface. Columns. Arches. Something vast.",             "DIVE TO RUINS"),
+            new("nest",    "Heron Nest",            IconBird,      "#5a9a8a", "A great heron watches from a tangle of reeds. The nest is enormous.",                  "APPROACH NEST"),
+        ],
+        [AreaType.Mountain] = [
+            new("cave",    "Cave Entrance",        IconMtnCave,   "#7a7a8a", "A wide-mouthed cave carved by glacial force. Something has been living inside.",        "ENTER CAVE"),
+            new("lookout", "Summit Lookout",       IconLighthouse,"#9a9ab0", "A crude watchtower at the peak. The view stretches to the horizon in all directions.",  "CLIMB TO SUMMIT"),
+            new("ruins",   "Ancient Ruins",        IconRuins,     "#6a6a7a", "Dressed stone impossibly high on the slope. Who built this, and when?",                 "INVESTIGATE RUINS"),
+        ],
+        [AreaType.Cliff] = [
+            new("cave",    "Cliff Cave",           IconCave,      "#5a5a6a", "A narrow crack in the cliff face widens into darkness. Wind howls through it.",         "ENTER CAVE"),
+            new("nest",    "Eagle's Nest",         IconBird,      "#c8a040", "A massive nest on a rocky shelf. Feathers and old bones litter the ground.",            "CLIMB TO NEST"),
+            new("outpost", "Crumbling Outpost",    IconFarm,      "#6a6060", "Someone built a small fortification here. The walls still stand. Barely.",              "SEARCH OUTPOST"),
+        ],
+        [AreaType.Desert] = [
+            new("oasis",   "Desert Oasis",         IconPalm,      "#4a8a50", "Green impossible against the endless sand. Cool water. The smell of life.",             "APPROACH OASIS"),
+            new("temple",  "Buried Temple",        IconTemple,    "#c8a040", "A carved lintel juts from the dune. Below, the rest of the structure waits.",           "EXCAVATE ENTRANCE"),
+            new("outpost", "Ruined Outpost",       IconFarm,      "#8a6a30", "Eroded mud-brick walls. Whoever sheltered here is long gone. Their supplies may not be.", "SEARCH OUTPOST"),
+        ],
+        [AreaType.DeepDesert] = [
+            new("temple",  "Ancient Temple",       IconTemple,    "#c88030", "The great doors stand open. Inside it is cool and dark. Something echoes back.",        "ENTER TEMPLE"),
+            new("bones",   "Bone Trail",           IconSkull,     "#9a8a6a", "Bleached bones mark a path into the waste. Many travelers came this way. None returned.", "FOLLOW TRAIL"),
+            new("mirage",  "Mirage Oasis",         IconPalm,      "#6a8a50", "The palms shimmer at the edge of sight. Real or imagined? The only way to know is go.", "APPROACH MIRAGE"),
+        ],
+        [AreaType.Swamp] = [
+            new("nest",    "Heron Marsh",          IconBird,      "#5a7a40", "Tall reeds and still water. A great bird watches from above. The mud pulls at your feet.", "WADE IN"),
+            new("path",    "Sunken Path",          IconBridge,    "#4a5a28", "Old stone flags just below the waterline mark an ancient road into the swamp.",        "CROSS PATH"),
+            new("mudflat", "Mudflat",              IconSwamp,     "#3a4a18", "Exposed mud stretches wide. Strange tracks cross it in all directions.",               "INVESTIGATE MUDFLAT"),
+        ],
+        [AreaType.DeepSwamp] = [
+            new("bridge",  "Rotten Bridge",        IconBridge,    "#2a3a14", "Blackened timber over black water. The ropes look like they haven't held in years.",    "CROSS BRIDGE"),
+            new("pool",    "Black Pool",           IconSwamp,     "#1a2a0a", "Still, lightless water. No ripples. No sound. Something moves at the very bottom.",     "APPROACH POOL"),
+            new("hollow",  "Bone Hollow",          IconSkull,     "#3a4a20", "A hollow tree the width of a room, packed with old bones. Animal? Human? Both.",        "ENTER HOLLOW"),
+        ],
+    };
+
     private static readonly AreaType[] BaseAreaPool =
     [
         AreaType.Grass, AreaType.Grass, AreaType.Grass,
@@ -276,7 +361,9 @@
     private bool             initialized;
     private MapRow[]         mapRows   = [];
     private (int Row, int Col) playerPos;
-    private List<string>     areaPath  = [];
+    private List<string>     areaPath       = [];
+    private List<SubArea>    currentSubAreas = [];
+    private SubArea?         activeSubArea;
     private InvItem?[]       invItems  = new InvItem?[12];
     private StatusEffect[]   statuses  = [];
 
@@ -353,10 +440,10 @@
             var neighbours = chosen
                 .Where(n => (n.R != r || n.C != c) && AreAdj(r, c, n.R, n.C))
                 .ToList();
-            if (neighbours.Count > 0 &&
-                neighbours.All(n => typeGrid[n.R, n.C].HasValue &&
-                                    GetBaseType(typeGrid[n.R, n.C]!.Value) == t) &&
-                rng.Next(3) == 0)
+            var matchingCount = neighbours.Count(n =>
+                typeGrid[n.R, n.C].HasValue &&
+                GetBaseType(typeGrid[n.R, n.C]!.Value) == t);
+            if (matchingCount >= 2 && rng.Next(3) == 0)
             {
                 typeGrid[r, c] = deepT;
             }
@@ -479,6 +566,29 @@
     {
         var info = GetCurrentAreaInfo();
         areaPath = info != null ? [info.Name] : ["Unknown Area"];
+        activeSubArea = null;
+        GenerateSubAreas();
+    }
+
+    private void GenerateSubAreas()
+    {
+        var slot = mapRows[playerPos.Row].Slots[playerPos.Col];
+        if (slot.HasValue && SubAreaPool.TryGetValue(slot.Value, out var pool))
+        {
+            var rng   = new Random();
+            var count = Math.Min(rng.Next(1, 4), pool.Length);
+            currentSubAreas = pool.OrderBy(_ => rng.Next()).Take(count).ToList();
+        }
+        else
+        {
+            currentSubAreas = [];
+        }
+    }
+
+    private void EnterSubArea(SubArea sub)
+    {
+        activeSubArea = sub;
+        areaPath.Add(sub.Name);
     }
 
     private string GetTerrainClass()
@@ -497,16 +607,13 @@
     }
 
     // ── Breadcrumb navigation ──────────────────────────────────────────
-    private void Explore()
-    {
-        // TODO: populate with real sub-area content per area type
-        areaPath.Add("[ sub-area — coming soon ]");
-    }
-
     private void NavigateToCrumb(int idx)
     {
         if (idx >= 0 && idx < areaPath.Count)
+        {
             areaPath = areaPath.Take(idx + 1).ToList();
+            if (idx == 0) activeSubArea = null;
+        }
     }
 
     private void HandleUserChanged() => _ = InvokeAsync(StateHasChanged);
