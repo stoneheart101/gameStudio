@@ -18,6 +18,14 @@ public class CharacterService(AppDbContext db)
         if (c != null) { db.Characters.Remove(c); await db.SaveChangesAsync(); }
     }
 
+    public async Task UpdateCharacterAsync(Character character)
+    {
+        var entry = db.Entry(character);
+        if (entry.State == EntityState.Detached)
+            db.Characters.Update(character);
+        await db.SaveChangesAsync();
+    }
+
     public async Task<Character> CreateCharacterAsync(int userId, string name,
         int speed, int strength, int smarts, int agility, int toughness, int magic, int health)
     {
@@ -31,7 +39,9 @@ public class CharacterService(AppDbContext db)
             Agility = agility,
             Toughness = toughness,
             Magic = magic,
-            Health = health
+            Health = health,
+            Level = 1,
+            Experience = 0
         };
         db.Characters.Add(character);
         await db.SaveChangesAsync();

@@ -37,12 +37,20 @@ using (var scope = app.Services.CreateScope())
             Toughness INTEGER NOT NULL DEFAULT 1,
             Magic INTEGER NOT NULL DEFAULT 1,
             Health INTEGER NOT NULL DEFAULT 1,
+            Level INTEGER NOT NULL DEFAULT 1,
+            Experience INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (UserId) REFERENCES Users(Id)
         )");
     // Add stat columns to existing Characters tables
     foreach (var col in new[] { "Speed", "Strength", "Smarts", "Agility", "Toughness", "Magic", "Health" })
     {
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Characters ADD COLUMN " + col + " INTEGER NOT NULL DEFAULT 1"); }
+        catch { /* column already exists */ }
+    }
+    // Add Level and Experience columns to existing Characters tables
+    foreach (var (colName, colDef) in new[] { ("Level", "INTEGER NOT NULL DEFAULT 1"), ("Experience", "INTEGER NOT NULL DEFAULT 0") })
+    {
+        try { db.Database.ExecuteSqlRaw($"ALTER TABLE Characters ADD COLUMN {colName} {colDef}"); }
         catch { /* column already exists */ }
     }
 }

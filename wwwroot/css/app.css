@@ -2016,3 +2016,673 @@ body:has(.explorer-container) .player-badge {
     border-color: var(--ex-blood-dim);
     background: rgba(160,32,32,0.08);
 }
+
+
+/* =====================================================================
+   FORWARD — 1980s/90s D&D pen-and-paper aesthetic
+   ===================================================================== */
+
+/* ── Page shell ──────────────────────────────────────────────────────── */
+.forward-page {
+    /* Break out of Bootstrap container to fill full viewport width */
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
+    margin-top: calc(-1rem);    /* cancel .container py-3 top pad   */
+    margin-bottom: calc(-1rem); /* cancel .container py-3 bot pad   */
+
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+
+    background-color: #111;
+    /* Graph-paper grid */
+    background-image:
+        linear-gradient(rgba(229, 213, 184, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(229, 213, 184, 0.05) 1px, transparent 1px);
+    background-size: 22px 22px;
+
+    color: #e5d5b8;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+}
+
+/* Suppress the global CRT overlay inside the Forward page */
+.forward-page ~ body::after { display: none; }
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+.fw-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 16px;
+    border-bottom: 3px solid #e5d5b8;
+    background: #111;
+    flex-shrink: 0;
+}
+
+.fw-title {
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: #e5d5b8;
+}
+
+.fw-header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+.fw-back-link {
+    color: #c8a86b;
+    text-decoration: none;
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+.fw-back-link:hover { text-decoration: underline; color: #e5d5b8; }
+
+.fw-playing-as {
+    color: #7a6d56;
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+
+/* ── Loading / no-user message ───────────────────────────────────────── */
+.fw-loading-msg {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: #7a6d56;
+    letter-spacing: 3px;
+    font-size: 12px;
+}
+
+/* ── Main content area (everything below header) ─────────────────────── */
+.fw-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* ── TOP SECTION ─────────────────────────────────────────────────────── */
+.fw-top {
+    display: flex;
+    flex-direction: row;
+    height: 40vh;
+    min-height: 180px;
+    border-bottom: 3px solid #e5d5b8;
+    flex-shrink: 0;
+}
+
+/* Generic panel wrapper */
+.fw-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.fw-panel-label {
+    font-size: 9px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #7a6d56;
+    padding: 5px 8px 4px;
+    border-bottom: 1px solid #2e2518;
+    flex-shrink: 0;
+}
+
+/* ── Map panel ───────────────────────────────────────────────────────── */
+.fw-map-panel {
+    width: 40%;
+    border-right: 2px solid #e5d5b8;
+}
+
+.fw-map-area {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(11, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 4px;
+    padding: 6px 8px;
+    min-height: 0;
+}
+
+.fw-map-rect {
+    border: 2px solid #c8b99a;
+    background: #0e0c0a;
+    position: relative;
+    box-shadow: 2px 2px 0 #080604;
+    cursor: default;
+}
+/* Inner room line — gives a "thick hand-drawn wall" look */
+.fw-map-rect::after {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border: 1px solid rgba(200, 185, 154, 0.18);
+    pointer-events: none;
+}
+/* Player's current position */
+.fw-map-rect.is-player {
+    background: #2a1c08 !important;
+    border-color: #c8a86b !important;
+    box-shadow: 0 0 8px rgba(200, 168, 107, 0.35), 2px 2px 0 #080604 !important;
+}
+.fw-map-rect.is-player::after {
+    border-color: rgba(200, 168, 107, 0.4);
+}
+/* Reachable (valid move target) */
+.fw-map-rect.is-reachable {
+    border-color: #4a6a30;
+    cursor: pointer;
+}
+.fw-map-rect.is-reachable:hover {
+    background: #141e0a;
+    border-color: #7ab04a;
+}
+
+/* ── Character panel ─────────────────────────────────────────────────── */
+.fw-char-panel {
+    width: 20%;
+    border-right: 2px solid #e5d5b8;
+    padding: 0;
+}
+
+.fw-char-name {
+    font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 3px;
+    text-align: center;
+    padding: 8px 8px 4px;
+    color: #e5d5b8;
+    border-bottom: 1px solid #2e2518;
+    flex-shrink: 0;
+}
+
+/* Hide global player-switch badge on the Forward page */
+body:has(.forward-page) .player-badge { display: none; }
+
+/* Two-zone split inside the character panel */
+.fw-stats-zones {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    min-height: 0;
+}
+
+.fw-stats-zone-left {
+    flex: 1;
+    border-right: 1px solid #2e2518;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.fw-stats-zone-right {
+    flex: 1;
+    min-width: 0;
+}
+
+.fw-stats {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 8px;
+}
+
+.fw-stat-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.fw-stat-icon {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.fw-stat-icon svg { display: block; }
+
+.fw-stat-label {
+    color: #7a6d56;
+    letter-spacing: 2px;
+    font-size: 11px;
+    flex: 1;
+}
+
+.fw-stat-val {
+    color: #e5d5b8;
+    font-weight: bold;
+    min-width: 28px;
+    text-align: right;
+    font-size: 20px;
+}
+
+/* ── Inventory panel ─────────────────────────────────────────────────── */
+.fw-inv-panel {
+    width: 40%;
+}
+
+.fw-inv-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 3px;
+    padding: 6px 8px;
+    min-height: 0;
+}
+
+.fw-inv-slot {
+    border: 1px solid #2e2518;
+    background: #0d0b08;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    cursor: default;
+    font-size: 18px;
+}
+
+.fw-inv-slot.has-item {
+    border-color: #c8b99a;
+    cursor: pointer;
+}
+.fw-inv-slot.has-item:hover {
+    background: #1a1610;
+    border-color: #e5d5b8;
+}
+
+.fw-inv-icon {
+    pointer-events: none;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.fw-inv-icon svg { display: block; }
+
+/* Tooltip — appears in the adjacent slot's space */
+.fw-inv-tip {
+    display: none;
+    position: absolute;
+    top: 0;
+    width: 100%;
+    background: #111;
+    border: 2px solid #e5d5b8;
+    padding: 7px 9px;
+    z-index: 100;
+    pointer-events: none;
+    white-space: normal;
+    line-height: 1.5;
+    box-shadow: 3px 3px 0 #080604;
+}
+/* Left-half items (cols 1-2): tip opens to the right */
+.fw-inv-slot.left-half.has-item:hover .fw-inv-tip {
+    display: block;
+    left: calc(100% + 3px);
+}
+/* Right-half items (cols 3-4): tip opens to the left */
+.fw-inv-slot.right-half.has-item:hover .fw-inv-tip {
+    display: block;
+    right: calc(100% + 3px);
+}
+
+.fw-inv-tip-name {
+    font-size: 11px;
+    font-weight: bold;
+    color: #c8a86b;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid #2e2518;
+    padding-bottom: 3px;
+}
+.fw-inv-tip-desc {
+    font-size: 10px;
+    color: #b0a080;
+    margin-bottom: 4px;
+}
+.fw-inv-tip-uses {
+    font-size: 10px;
+    color: #7a6d56;
+    font-style: italic;
+}
+
+/* ── BOTTOM SECTION ──────────────────────────────────────────────────── */
+.fw-bottom {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    min-height: 0;
+}
+
+/* Terrain background (very faint) */
+.fw-terrain-bg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.07;
+}
+.fw-terrain-forest {
+    background-image: repeating-linear-gradient(
+        -50deg,
+        #3a6030 0px,
+        #3a6030 1px,
+        transparent 1px,
+        transparent 9px
+    );
+}
+
+/* Breadcrumb bar */
+.fw-breadcrumb {
+    position: relative;
+    z-index: 1;
+    padding: 6px 14px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    border-bottom: 1px solid #2e2518;
+    background: rgba(17, 17, 17, 0.92);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.fw-crumb-link {
+    color: #c8a86b;
+    cursor: pointer;
+    text-decoration: none;
+}
+.fw-crumb-link:hover { text-decoration: underline; }
+
+.fw-crumb-sep {
+    color: #3a3020;
+}
+
+.fw-crumb-current {
+    color: #e5d5b8;
+}
+
+/* Area body (main interaction area) */
+.fw-area-body {
+    flex: 1;
+    position: relative;
+    z-index: 1;
+    padding: 14px 16px;
+    overflow-y: auto;
+}
+
+.fw-stub-text {
+    color: #3a3020;
+    font-size: 11px;
+    font-style: italic;
+    letter-spacing: 1px;
+    margin: 0;
+}
+
+/* Action buttons row */
+.fw-action-bar {
+    position: relative;
+    z-index: 1;
+    padding: 8px 14px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    border-top: 2px solid #2e2518;
+    background: rgba(17, 17, 17, 0.92);
+    flex-shrink: 0;
+}
+
+/* ── D&D action button ───────────────────────────────────────────────── */
+.fw-btn {
+    background: #111;
+    color: #e5d5b8;
+    border: 2px solid #e5d5b8;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 5px 12px;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    box-shadow: 2px 2px 0 #080604;
+    transition: none;
+}
+.fw-btn:hover {
+    background: #e5d5b8;
+    color: #111;
+    box-shadow: none;
+    transform: translate(2px, 2px);
+}
+.fw-btn:active {
+    background: #c8a86b;
+    color: #111;
+    border-color: #c8a86b;
+    box-shadow: none;
+    transform: translate(2px, 2px);
+}
+
+/* ── STATUS BAR ──────────────────────────────────────────────────────── */
+.fw-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 5px 14px;
+    border-top: 3px solid #e5d5b8;
+    background: #111;
+    flex-shrink: 0;
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+
+.fw-sb-xp-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    max-width: 220px;
+}
+
+.fw-sb-label {
+    color: #7a6d56;
+    font-size: 9px;
+    letter-spacing: 2px;
+    flex-shrink: 0;
+}
+
+.fw-sb-track {
+    flex: 1;
+    height: 6px;
+    background: #0e0c0a;
+    border: 1px solid #e5d5b8;
+    overflow: hidden;
+}
+
+.fw-sb-fill {
+    height: 100%;
+    background: #c8a86b;
+}
+
+.fw-sb-nums {
+    color: #7a6d56;
+    font-size: 9px;
+    white-space: nowrap;
+}
+
+.fw-sb-level {
+    color: #c8a86b;
+    font-weight: bold;
+    font-size: 11px;
+    letter-spacing: 2px;
+    white-space: nowrap;
+}
+
+.fw-sb-statuses {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.fw-sb-status {
+    font-size: 14px;
+    padding: 1px 4px;
+    border: 1px solid #3a3020;
+    cursor: default;
+    background: #0e0c0a;
+}
+
+/* ── Area type colors on map rects ───────────────────────────────────── */
+.fw-map-rect.at-grass      { border-color: #6a9a40; background: #1a2810; }
+.fw-map-rect.at-forest     { border-color: #3a7a28; background: #0e1a08; }
+.fw-map-rect.at-deepforest { border-color: #1a4a12; background: #080e04; }
+.fw-map-rect.at-lake       { border-color: #3a6ab0; background: #0a1828; }
+.fw-map-rect.at-mountain   { border-color: #7a7a9a; background: #1a1a22; }
+.fw-map-rect.at-cliff      { border-color: #5a5a6a; background: #121218; }
+.fw-map-rect.at-desert     { border-color: #c8a040; background: #2a200a; }
+.fw-map-rect.at-deepdesert { border-color: #8a5010; background: #1a0e04; }
+.fw-map-rect.at-swamp      { border-color: #5a7a30; background: #141810; }
+.fw-map-rect.at-deepswamp  { border-color: #2a4a14; background: #080c04; }
+
+/* ── Map area icons ───────────────────────────────────────────────────── */
+.fw-map-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    opacity: 0.7;
+    pointer-events: none;
+}
+.fw-map-icon svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+}
+
+/* ── Bottom section: area info ───────────────────────────────────────── */
+.fw-area-info {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 8px 0 12px;
+}
+.fw-area-icon {
+    flex-shrink: 0;
+    opacity: 0.85;
+}
+.fw-area-icon svg {
+    width: 48px;
+    height: 48px;
+    display: block;
+}
+.fw-area-text {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.fw-area-name {
+    font-size: 16px;
+    font-weight: bold;
+    letter-spacing: 4px;
+    color: #e5d5b8;
+    text-transform: uppercase;
+}
+.fw-area-desc {
+    font-size: 12px;
+    color: #b0a080;
+    line-height: 1.6;
+    font-style: italic;
+}
+
+/* ── Terrain backgrounds by area type ───────────────────────────────── */
+.fw-terrain-grass {
+    background-image: repeating-linear-gradient(
+        45deg,
+        #4a7a30 0, #4a7a30 1px,
+        transparent 1px, transparent 8px
+    );
+}
+.fw-terrain-forest {
+    background-image: repeating-linear-gradient(
+        45deg,
+        #2a5a18 0, #2a5a18 1px,
+        transparent 1px, transparent 8px
+    );
+}
+.fw-terrain-deepforest {
+    background-image: repeating-linear-gradient(
+        45deg,
+        #1a3a0e 0, #1a3a0e 1px,
+        transparent 1px, transparent 6px
+    );
+}
+.fw-terrain-lake {
+    background-image: repeating-linear-gradient(
+        0deg,
+        #2a4a8a 0, #2a4a8a 1px,
+        transparent 1px, transparent 6px
+    );
+}
+.fw-terrain-mountain {
+    background-image: repeating-linear-gradient(
+        60deg,
+        #5a5a7a 0, #5a5a7a 1px,
+        transparent 1px, transparent 10px
+    );
+}
+.fw-terrain-cliff {
+    background-image: repeating-linear-gradient(
+        90deg,
+        #3a3a4a 0, #3a3a4a 1px,
+        transparent 1px, transparent 8px
+    );
+}
+.fw-terrain-desert {
+    background-image: repeating-linear-gradient(
+        30deg,
+        #8a6010 0, #8a6010 1px,
+        transparent 1px, transparent 8px
+    );
+}
+.fw-terrain-deepdesert {
+    background-image: repeating-linear-gradient(
+        30deg,
+        #5a3a08 0, #5a3a08 1px,
+        transparent 1px, transparent 6px
+    );
+}
+.fw-terrain-swamp {
+    background-image: repeating-linear-gradient(
+        -30deg,
+        #3a4a18 0, #3a4a18 1px,
+        transparent 1px, transparent 7px
+    );
+}
+.fw-terrain-deepswamp {
+    background-image: repeating-linear-gradient(
+        -30deg,
+        #1e2a0c 0, #1e2a0c 1px,
+        transparent 1px, transparent 5px
+    );
+}
+
+/* ── Responsive: shrink map rects on small screens ───────────────────── */
+@media (max-width: 900px) {
+    .fw-map-area { gap: 3px; padding: 4px 6px; }
+    .fw-char-name { font-size: 12px; }
+}

@@ -1,0 +1,515 @@
+@page "/forward"
+@rendermode InteractiveServer
+@inject UserSession UserSession
+@implements IDisposable
+
+<PageTitle>Forward - Game Studio</PageTitle>
+
+<div class="forward-page">
+
+    <header class="fw-header">
+        <span class="fw-title">FORWARD</span>
+        <div class="fw-header-right">
+            <a href="/" class="fw-back-link">&#8592; Back to Games</a>
+            @if (UserSession.CurrentUser != null)
+            {
+                <span class="fw-playing-as">Playing as @UserSession.CurrentUser.Name</span>
+            }
+        </div>
+    </header>
+
+    @if (!initialized)
+    {
+        <div class="fw-loading-msg">LOADING...</div>
+    }
+    else if (UserSession.CurrentUser == null)
+    {
+        <div class="fw-loading-msg">
+            <p>CREATE A PLAYER PROFILE FIRST</p>
+            <a href="/" class="fw-btn">GO HOME</a>
+        </div>
+    }
+    else
+    {
+        <div class="fw-main">
+
+            <!-- ── TOP SECTION: Map | Character | Inventory ───────────── -->
+            <div class="fw-top">
+
+                <!-- Map panel — left 40% -->
+                <div class="fw-panel fw-map-panel">
+                    <div class="fw-panel-label">MAP</div>
+                    <div class="fw-map-area">
+                        @for (var ri = 0; ri < mapRows.Length; ri++)
+                        {
+                            var row    = mapRows[ri];
+                            var rowNum = ri + 1;
+                            for (var ci = 0; ci < 5; ci++)
+                            {
+                                if (row.Slots[ci].HasValue)
+                                {
+                                    var r        = ri;
+                                    var c        = ci;
+                                    var colStart = row.IsOffset ? (c * 2 + 2) : (c * 2 + 1);
+                                    var isPlayer = r == playerPos.Row && c == playerPos.Col;
+                                    var canMove  = !isPlayer && IsValidMove(r, c);
+                                    var stateCls = isPlayer ? "is-player" : canMove ? "is-reachable" : "";
+                                    var info     = GetAreaInfo(row.Slots[c]!.Value);
+                                    <div class="fw-map-rect @stateCls at-@info.CssClass"
+                                         style="grid-column:@(colStart) / span 2; grid-row:@rowNum;"
+                                         @onclick="() => OnMapRectClick(r, c)">
+                                        <span class="fw-map-icon" style="color:@info.IconColor;">
+                                            @((MarkupString)info.Icon)
+                                        </span>
+                                    </div>
+                                }
+                            }
+                        }
+                    </div>
+                </div>
+
+                <!-- Character panel — center 20% -->
+                <div class="fw-panel fw-char-panel">
+                    <div class="fw-char-name">@charName</div>
+                    <div class="fw-stats-zones">
+                        <div class="fw-stats-zone-left">
+                            <div class="fw-stats">
+                                <div class="fw-stat-row">
+                                    <span class="fw-stat-icon">@((MarkupString)IconSword)</span>
+                                    <span class="fw-stat-label">STR</span>
+                                    <span class="fw-stat-val">@strVal</span>
+                                </div>
+                                <div class="fw-stat-row">
+                                    <span class="fw-stat-icon">@((MarkupString)IconBolt)</span>
+                                    <span class="fw-stat-label">AGI</span>
+                                    <span class="fw-stat-val">@agiVal</span>
+                                </div>
+                                <div class="fw-stat-row">
+                                    <span class="fw-stat-icon">@((MarkupString)IconShield)</span>
+                                    <span class="fw-stat-label">TGH</span>
+                                    <span class="fw-stat-val">@tghVal</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="fw-stats-zone-right">
+                            <!-- stub: future character info -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Inventory panel — right 40% -->
+                <div class="fw-panel fw-inv-panel">
+                    <div class="fw-panel-label">INVENTORY</div>
+                    <div class="fw-inv-grid">
+                        @for (var i = 0; i < 12; i++)
+                        {
+                            var item      = i < invItems.Length ? invItems[i] : null;
+                            var halfClass = (i % 4) < 2 ? "left-half" : "right-half";
+                            <div class="fw-inv-slot @(item != null ? "has-item" : "") @halfClass">
+                                @if (item != null)
+                                {
+                                    <span class="fw-inv-icon">@((MarkupString)item.Icon)</span>
+                                    <div class="fw-inv-tip">
+                                        <div class="fw-inv-tip-name">@item.Name</div>
+                                        <div class="fw-inv-tip-desc">@item.Desc</div>
+                                        <div class="fw-inv-tip-uses">Uses: @item.Uses</div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+
+            </div><!-- /fw-top -->
+
+            <!-- ── BOTTOM SECTION: Area interaction ───────────────────── -->
+            <div class="fw-bottom">
+                <div class="fw-terrain-bg fw-terrain-@GetTerrainClass()"></div>
+
+                <div class="fw-breadcrumb">
+                    @for (var i = 0; i < areaPath.Count; i++)
+                    {
+                        var idx = i;
+                        if (i > 0) { <span class="fw-crumb-sep">&#8250;</span> }
+                        if (i < areaPath.Count - 1)
+                        {
+                            <span class="fw-crumb-link" @onclick="() => NavigateToCrumb(idx)">@areaPath[i]</span>
+                        }
+                        else
+                        {
+                            <span class="fw-crumb-current">@areaPath[i]</span>
+                        }
+                    }
+                </div>
+
+                <div class="fw-area-body">
+                    @{
+                        var curInfo = GetCurrentAreaInfo();
+                    }
+                    @if (curInfo != null && areaPath.Count == 1)
+                    {
+                        <div class="fw-area-info">
+                            <div class="fw-area-icon" style="color:@curInfo.IconColor;">
+                                @((MarkupString)curInfo.Icon)
+                            </div>
+                            <div class="fw-area-text">
+                                <div class="fw-area-name">@curInfo.Name.ToUpper()</div>
+                                <div class="fw-area-desc">@curInfo.Description</div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="fw-stub-text">[ sub-area &mdash; coming soon ]</p>
+                    }
+                </div>
+
+                <div class="fw-action-bar">
+                    @if (areaPath.Count == 1)
+                    {
+                        <button class="fw-btn" @onclick="Explore">EXPLORE</button>
+                    }
+                    <button class="fw-btn">LOOK AROUND</button>
+                </div>
+            </div><!-- /fw-bottom -->
+
+        </div><!-- /fw-main -->
+
+        <!-- ── STATUS BAR ─────────────────────────────────────────────── -->
+        <div class="fw-status-bar">
+            <div class="fw-sb-xp-wrap">
+                <span class="fw-sb-label">XP</span>
+                <div class="fw-sb-track">
+                    <div class="fw-sb-fill" style="width:@XpPct%;"></div>
+                </div>
+                <span class="fw-sb-nums">@xpCurrent&thinsp;/&thinsp;@xpNext</span>
+            </div>
+            <div class="fw-sb-level">LVL&nbsp;@charLevel</div>
+            <div class="fw-sb-statuses">
+                @foreach (var s in statuses)
+                {
+                    <span class="fw-sb-status" title="@s.Label">@s.Icon</span>
+                }
+            </div>
+        </div>
+
+    }<!-- /else (logged in) -->
+
+</div><!-- /forward-page -->
+
+@code {
+    // ── Better-icons: stat icons ───────────────────────────────────────
+    private static readonly string IconSword  = """<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="M11 2h2v2h-2zM9 4h2v12H9zm4 0h2v12h-2zM7 16h10v2H7zm4 2h2v4h-2z"/></svg>""";
+    private static readonly string IconBolt   = """<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="m13 2l.018.001l.016.001l.083.005l.011.002h.011l.038.009l.052.008l.016.006l.011.001l.029.011l.052.014l.019.009l.015.004l.028.014l.04.017l.021.012l.022.01l.023.015l.031.017l.034.024l.018.011l.013.012l.024.017l.038.034l.022.017l.008.01l.014.012l.036.041l.026.027l.006.009c.12.147.196.322.218.513l.001.012l.002.041L14 3v6h5a1 1 0 0 1 .868 1.497l-.06.091l-8 11C11.24 22.371 10 21.968 10 21v-6H5a1 1 0 0 1-.868-1.497l.06-.091l8-11l.01-.013l.018-.024l.033-.038l.018-.022l.009-.008l.013-.014l.04-.036l.028-.026l.008-.006a1 1 0 0 1 .402-.199l.011-.001l.027-.005l.074-.013l.011-.001l.041-.002z"/></svg>""";
+    private static readonly string IconShield = """<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="M11.884 2.007L11.998 2l.118.007l.059.008l.061.013l.111.034a1 1 0 0 1 .217.112l.104.082l.255.218a11 11 0 0 0 7.189 2.537l.342-.01a1 1 0 0 1 1.005.717a13 13 0 0 1-9.208 16.25a1 1 0 0 1-.502 0A13 13 0 0 1 2.54 5.718a1 1 0 0 1 1.005-.717a11 11 0 0 0 7.531-2.527l.263-.225l.096-.075a1 1 0 0 1 .217-.112l.112-.034a1 1 0 0 1 .119-.021z"/></svg>""";
+
+    // ── Better-icons: inventory items ──────────────────────────────────
+    private static readonly string IconDagger = """<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="currentColor" d="m22 2l-4.61 1.75l-6.93 6.93L14 14.22l6.92-6.93C22.43 5.78 22 2 22 2M8.33 10l-1.41 1.39l1.41 1.41l-5.65 5.66L6.21 22l5.66-5.66l1.41 1.42l1.42-1.42z"/></svg>""";
+    private static readonly string IconBread  = """<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 4a3 3 0 0 1 2 5.235V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9.236a3 3 0 0 1 1.824-5.231H18z"/></svg>""";
+
+    // ── Better-icons: area type icons ──────────────────────────────────
+    private static readonly string IconGrass   = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="M461.563 38.938C313.435 165.053 232.49 371.144 210.313 492.5h77.218c31.597-122.495 51.135-263.494 174.033-453.563zM78.375 91.374c52.397 62.796 102.31 132.45 142.094 199.28a1188 1188 0 0 1 20.81 36.408a956 956 0 0 1 26.095-58.282c-51.817-71.23-113.464-135.005-189-177.405zm391.188 133.72c-51.588 46.498-78.856 114.453-90.594 190.655c13.775 25.835 26.704 51.295 38.936 75.875h39.375c-25.25-71.46-11.537-162.36 12.283-266.53M67 240.437c72.962 73.26 120.794 188.6 80.094 250.78h45c4.494-25.12 11.34-53.633 20.687-84.25C194.338 322.68 131.42 242.927 67 240.44zm-32.875 87.937C87.145 409.31 95.83 453.34 75.063 490.97h67.5c-13.1-72.02-31.444-116.305-108.438-162.595zm300.938 45.594c-10.65 41.36-19.188 80.437-28.813 118.25h91.72c-19.144-38.286-39.92-78.392-62.908-118.25z"/></svg>""";
+    private static readonly string IconTree    = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="M249.28 19.188v.25c-18.114 38.634-45.065 72.36-77.686 102.937l37.72-3.938l-51.345 65.032l24.81-7.907l-33.624 54.875l16.53 9.843l-65.25 92.157l36.095.188l-51.686 83.594l63.562-8.126l12 32.094l66.438-25.282L215.5 493.28h52.938l-6.532-68.217l38.188 16.406l10.187-24.783l44.283 20.97l56.406-20.75l-37.064-64.094l-12.437-2.282l6.78 17.19l7.844 19.905l-19.938-7.78l-50.906-19.908v35.751l-14.156-8.594l-69.375-42l-21.595 21.25l-18.03 17.75l2.155-25.22l2.125-24.655l18.188 1.56l9.218-9.092l5.19-5.094l6.218 3.75l61.375 37.156v-29.906l12.75 4.97l43.718 17.092l-5.092-12.906l-6.157-15.656l16.533 3.03l45.468 8.345l-34.53-38.94l-23.625 14.033l-6.688 3.968l-5.125-5.874l-14.28-16.437l.218 1.217l-18.406 3.22l-5.97-34.313l-5.75-33.063l22 25.345l31.188 35.875l43.907-26.03c-24.67-19.543-39.507-33.87-49.658-48.814l.813 12.656l1.97 31l-18.75-24.75l-34.47-45.437l-22.25 46.813l-13.844 29.125l-3.843-32.032l-3.5-28.843l16.532-1.968l16.624-34.97l6.594-13.875l9.28 12.22l25 32.936l-.75-11.53l-.906-14.28l13.47 4.936L341.81 188l-26.125-35.156l-55.843-28.875l-8.938 20.218l-9.656 21.937l-7.72-22.688l-7.468-21.875l16.97-5.78l3.718-8.438l4-9.125l8.844 4.593l49.375 25.53l16.467-5.562c-43.42-34.31-64.63-68.886-76.156-103.593z"/></svg>""";
+    private static readonly string IconWaves   = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M2 18h4v-2H2zm0-6h4v-2H2zm0-6h4V4H2zm4 14h4v-2H6zm0-6h4v-2H6zm0-6h4V6H6zm4 10h4v-2h-4zm0-6h4v-2h-4zm0-6h4V4h-4zm4 14h4v-2h-4zm0-6h4v-2h-4zm0-6h4V6h-4zm4 10h4v-2h-4zm0-6h4v-2h-4zm0-6h4V4h-4z"/></svg>""";
+    private static readonly string IconMtn     = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="m6.18 10.95l2.54 3.175l.084.093a1 1 0 0 0 1.403-.01l1.637-1.638l1.324 1.985a1 1 0 0 0 1.457.226l3.632-2.906l3.647 7.697A1 1 0 0 1 21 21H3a1 1 0 0 1-.904-1.428zM12 3.072a3.3 3.3 0 0 1 2.983 1.888l2.394 5.057l-3.15 2.52l-1.395-2.092l-.075-.099a1 1 0 0 0-1.464-.053l-1.711 1.709l-1.301-1.627L7.13 8.94l1.888-3.98A3.3 3.3 0 0 1 12 3.072"/></svg>""";
+    private static readonly string IconCliff   = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="M494.2 76.94L316.5 91.73l1.4 17.97l177.7-14.82zm.8 36.86L324.2 128l11.3 34l43.5 7.5l-37.6 10.1l27.5 82.6l.2 3l38 31.1l57.1 16.5l-69 .2l-24.3-20.7l4.4 66.6l30.2 19.5l-28.7 3.1l7.6 113.5H495V237.2l-44.2 13.2l-45-8.4l38.4-7.5l50.8-25.2zM245.4 255.2c-2.9 0-5.5.8-7.5 2.5c-6.4 5.4 1.8 19.1 8.9 23.6c7.7 4.7 25 6.1 26.9-2.7c2.4-11-15.8-23.8-28.3-23.4m34.8 18.4c14.2 23.5 33.4 45.7 39 71.3c-20.6-14.3-53.4-15.5-85.4-17.6c23.7 20.6 50.2 35.6 78.5 47.1c-20.3-5.3-39.7-11.9-64.5-11.5c14.6 23.4 35.8 47.1 64.3 62.1c-1.9 1.4-3.8 2.9-5.6 4.3c-10 7.8-18.4 13.7-26.5 13.7c-7.9 0-16.4-6-26.4-14S232 411 216 411s-27.6 10-37.6 18s-18.5 14-26.4 14s-16.4-6-26.4-14c-10.1-8-21.7-18-37.6-18c-15.95 0-32.12 9-45.66 17.3C28.8 436.7 18.39 445 18.39 445l11.22 14s9.66-7.7 22.16-15.3C64.26 436 80.1 429 88 429c7.87 0 16.3 6 26.4 14c10 8 21.6 18 37.6 18s27.6-10 37.6-18s18.5-14 26.4-14s16.4 6 26.4 14s21.6 18 37.6 18c15.8 0 27.5-9.6 37.6-17.5c10.1-8 18.7-14.2 26.8-14.5c4.5-.2 10.9 1 17.8 3.1l-7.9-117.9c-18.4-14.9-45.8-27.9-74.1-40.6m-70 41.7c-4.5 0-8.7 1.7-10.1 5.3c-1.9 5.2 5.4 11.1 10.1 11.7c5 .8 13.9-3.4 12.7-9.3c-1-5-7-7.8-12.7-7.7M192 338.2c-6.3-.1-13.8 3.9-13.5 9.3c.3 4.9 8.8 7 13.1 5.8c4.6-1.1 10.7-7.7 7.4-12.1c-1.5-2-4.2-2.9-7-3"/></svg>""";
+    private static readonly string IconDesert  = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="m481.5 21.96l-45.6 12.33c2.6 5.3 4.3 11.14 4.9 17.3l45.3-12.25zm-279.3.67L200 40.51l143 17.04V56c0-5.7 1-11.17 2.8-16.26zM392 25c-17.2 0-31 13.77-31 31s13.8 31 31 31s31-13.77 31-31s-13.8-31-31-31m-43.8 52.81l-74.5 54.89l10.6 14.4L359 92.12c-4.5-4.05-8.1-8.9-10.8-14.31m73.9 16.81c-4.8 3.7-10.2 6.58-16.1 8.28l38.9 67.2l15.6-9zm-294.2.58c-.3.01-.5.02-.7.04c-3.3.32-7.7 3.47-11.8 8.76c-2.5 20.1-2.5 42.6.3 62.6l1.7 11.8l-11.9-1.7c-5.1-.7-7.11-.8-12.91-.4l-8.75.6l-.8-8.8c-.8-8.6-3.77-20.7-7.11-29.3c-3.41-2.9-5.73-3.4-7.78-3.2c-1.85.3-4.44 1.5-7.51 4.5c1.81 18.8 3.36 36.9 8.7 54.9c9.63 4.2 23.42 6.4 36.96 5.7l10-.5l-.6 10c-4.3 73.9-6.1 142.6-1 215.8c8.1 3.7 15.8 5.5 21.9 5.5c5.8 0 9.6-1.5 12-3.5c4.5-42.7.6-83.1-1.8-124.8l-.5-9.4l9.4-.1c10.7-.1 19.7-2.3 25.9-5.4c6-2.8 8.8-6.4 9.3-7.8c5.6-38.6 9.4-72.6 7.2-109.3c-.1-2.2-.7-2.9-1.8-3.8c-1-.9-3-1.7-5.2-1.8c-2.2-.2-4.6.3-6.1 1.1s-2 1.5-2.3 2.4c-9.4 31.1-17.3 62-18.6 94.7v.1l-18-.9v-.1c2.7-51 .6-104.7-2.6-156.2c-7.2-9.39-12.2-11.54-15.6-11.5m239.6 3.2l-53.9 142.9l16.8 6.4l54-143.3c-6-.9-11.8-3-16.9-6m66.4 111.7v47.8l-7.6-1.8l-4-28.2l-17.8 2.6l5.8 40.4l23.6 5.5V297h-233c-3.1 3-7.1 5.5-11.4 7.6c-6.8 3.2-15 5.6-24.2 6.6c2.5 39.2 5.8 78.9.9 121.7l-.2 2.4l-1.5 2c-6.4 8.5-17 12.2-27.9 12.2c-11 0-22.9-3.3-34.8-9.7l-4.41-2.3l-.36-4.9C93.6 386.2 93 341.8 94.04 297H25v190h462V297h-35.1v-38.5l23-5.3l4.8-24.8l-17.6-3.4l-2.6 13.2l-7.6 1.7v-29.8z"/></svg>""";
+    private static readonly string IconSwamp   = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="M199.188 19.97a9.5 9.5 0 0 0-8.407 4.843a907 907 0 0 0-10.843 19.156c-6.34-1.118-12.595-.258-16.406 3.53c-24.12 23.98-59.702 101.133-45.31 111.688c1.968 1.444 4.086 2.64 6.31 3.656c-16.64 42.836-30.184 86.292-40.124 128.562c-1.928-65.01-14.337-127.164-62.22-162.937c44.087 58.265 48.88 155.865 41.877 236.405c-11.69.81-23.34 1.66-34.97 2.53l1.407 18.94a6142 6142 0 0 1 31.656-2.283c-5.404 47.895-14.473 87.508-20.718 105.47l28.28-7.782l19.844 3.906c3.195-33.745 7.683-68.574 16.47-104.437c104.756-6.35 212.06-8.943 325.124-.814c9.21 20.087 7.668 38.25 2.563 64.156c-.69-30.596-32.682-59.164-127.25-57.718c-37.285.583-99.973 24.92-93.345 61.594c10.04 55.48 93.935 63.74 164.875 37.75l-32.78-43.72l76.467 37.75c7.045-10.18 11.56-21.598 12-32.843c14.556 1.83 29.126 3.61 43.625 5.875c20.6-36.8 25.25-154.36-88-314.47c39.61 88.105 71.88 190.382 63.157 224.22c-2.253-.186-4.504-.385-6.75-.563c-28.424-38.034-94.285-80.812-127.814-97.562C370.742 309.23 401.776 337.56 419 360.53c-38.743-2.512-76.81-3.813-114.313-4.155c-66.03-.6-130.31 1.732-193.5 5.47c14.246-49.464 37.544-100.834 77.75-153.97c-51.342 38.358-77.508 85.502-95.406 134.72c9.764-55.987 26.784-116.065 49.69-174.908c1.743.234 3.47.45 5.186.625c23.065 2.38 49.024-68.143 52.688-105.343c.375-3.812-1.312-7.414-4.188-10.44c3.37-6.11 6.79-12.172 10.28-18.155a9.5 9.5 0 0 0-8-14.406z"/></svg>""";
+
+    // ── Better-icons: sub-area + player icons ──────────────────────────
+    private static readonly string IconPlayer     = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><g fill="currentColor"><path fill="currentColor" d="M9.5 1.5a1.5 1.5 0 1 1-3 0a1.5 1.5 0 0 1 3 0M6.44 3.752A.75.75 0 0 1 7 3.5h1.445c.742 0 1.32.643 1.243 1.38l-.43 4.083a1.8 1.8 0 0 1-.088.395l-.318.906l.213.242a.8.8 0 0 1 .114.175l2 4.25a.75.75 0 1 1-1.357.638l-1.956-4.154l-1.68-1.921A.75.75 0 0 1 6 8.96l.138-2.613l-.435.489l-.464 2.786a.75.75 0 1 1-1.48-.246l.5-3a.75.75 0 0 1 .18-.375l2-2.25Z"/><path fill="currentColor" d="M6.25 11.745v-1.418l1.204 1.375l.261.524a.8.8 0 0 1-.12.231l-2.5 3.25a.75.75 0 1 1-1.19-.914zm4.22-4.215l-.494-.494l.205-1.843l.006-.067l1.124 1.124h1.44a.75.75 0 0 1 0 1.5H11a.75.75 0 0 1-.531-.22Z"/></g></svg>""";
+    private static readonly string IconTent       = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="m361.155 91.245l-18 .193l.42 38.98c-45.773 13.285-108.533 19.738-166.474 23.573c35.097 96.284 99.357 173.77 157.845 257.13c20.718-19.655 51.11-31.983 83.46-36.01c-20.8-18.109-36.634-27.966-58.833-70.438c31.27 37.085 52.579 48.467 77.623 62.006c3.263-13.094 8.938-24.638 18.721-32.674c8.667-7.12 20.026-10.654 33.53-10.344c-46.874-59.763-101.67-117.054-127.83-189.435l-.462-42.98zM163.25 102.92l-17.998.244s.25 18.34.56 36.97c.156 9.316.325 18.703.489 25.929c.06 2.636.117 4.58.174 6.542c-34.378 83.733-69.154 160.993-123.92 233.442c33.635-1.387 66.326-1.203 98.552-.041C143.37 343.389 144.453 271.151 156.734 204c11.417 68.562 10.566 139.445 33.483 205.83c42.962 3.082 85.69 7.198 129.35 10.926c-55.67-79.151-118.213-155.037-155.118-249.365c-.05-1.782-.1-3.396-.152-5.737c-.162-7.156-.333-16.523-.488-25.82c-.31-18.594-.559-36.914-.559-36.914"/></svg>""";
+    private static readonly string IconFarm       = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="M87.195 53.838v79.494h44.213V53.838zm344.291 89.422q.51 10.83 1.014 21.662l27.861 41.004l-46.379 17.504l9.409 16.57l-24.334 32.486h86.273V143.26zm-387.562 2.303v124.619H266.61l5.389-54.61l-63.18-17.166l21.7-38.656l-9.46-14.188zm6.709 134.802v201.711h53.316V321.408h96.614v160.668h271.152v-201.71h-83.766l-34.537 13.61l-23.178 30.768l-34.505-29.69l-26.827-14.689z"/></svg>""";
+    private static readonly string IconRuins      = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="m277.822 18l-33.46 5.637l20.41 20.41l42.12-5.5L457.26 171.332l8.892 52.78l-188.006-57.487l-8.16 12.145L494 247.27v-65.372L321.695 18zm-55.242 9.307L42.775 57.597l-14.457 47.276l195.346 59.732c3.162-2.613 6.453-5.325 12.973-10.673L71.084 103.31l34.695-36.474l2.195-2.31L242.262 46.99L222.58 27.31zm78.53 30.146l-20.282 2.65l23.832 23.83l-32.492 10.833l46.45 11.61l-29.983 44.634l154.928 47.373l-2.995-17.778l-139.46-123.152zm-42.794 5.59L116.626 81.55l-12.427 13.063l149.204 45.625c10.38-8.434 21.128-17.107 30.07-24.093l-75.64-18.91l63.506-21.17zM148.13 164.598l-26.595 26.595l-11.867-23.734l-14.95 44.843l-27.23-40.846L53.434 424.46c34.415 5.734 70.622 6.06 109.13-.075zm-5.134 43.134l6 202l-17.992.536l-6-202zm-69.992.004l17.992.528l-6 204l-17.992-.528zM99 208h18v208H99zm310 57v42.73c15.296 4.103 50.7 4.374 85 3.99V265zm-21.236 64c-3.1 2.538-6.47 4.89-10.202 6.822c-6.376 3.302-14.134 5.18-22.37 3.875c-4.783-.758-9.604-2.636-14.467-5.408L327.155 375H439v-46zM457 329v46h37v-46zm-185.658 17.377c-8.592 4.21-16.74 8.066-23.008 13.033c-5.09 4.035-9.18 8.75-12.11 15.59h78.05zM237.104 393c6.465 18.295 8.62 33.21 8.447 46H247v-46zM265 393v46h110v-46zm186.73 0l-46.003 46H494v-46zM195 442.203c-36.733 4.718-73.905 6.542-111.535 5.186l-3.414 4.45l35.934 6.764l-34.38 29.76c38.292 1.366 76.09-.08 113.396-4.42zm-174 .014v41.69a820 820 0 0 0 34.656 3.113l20.36-17.624l-28.067-5.283l13.704-17.867a670 670 0 0 1-40.654-4.03zM243.748 457c-2.055 11.088-5.47 20.656-8.2 30H311v-30zM329 457v30h110v-30zm128 0v30h37v-30z"/></svg>""";
+    private static readonly string IconCave       = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="M346.951 24.582L299.193 72.34l-101.136-7.024l-40.97 80.737l68.688 25.35l37.153-19.936l8.511 15.861l-44.293 23.768l-79.7-29.416l-70.19 55.341l35.117 58.995l-.375.2l13.014 21.585l29.134 2.361l55.06-35.123l9.679 15.176l-60.16 38.377l-44.364-3.596l-18.23-30.234l-56.8 30.586l33.712 61.804l-33.713 40.735L18 444.177V494h170.62l-5.6-45.592a261 261 0 0 1-5.147-4.512c-4.186-3.761-5.89-5.444-8.027-7.484l-73.13 21.797l-21.339-20.484l12.467-12.985l13.777 13.225l73.068-21.78l3.784 3.667s4.24 4.09 9.216 8.636l37.797-37.248l8.133 79.54l6.3-93.444l10.364 28.387l6.281-45.112l3.14-3.091l-.29-.233l22.486-27.974l.465-.907l.188.096l11.453-14.248l14.03 11.277l-9.122 11.348l67.803 34.715l27.008-9.489l22.478 17.71l22.924-12.036l8.367 15.938l-33.262 17.46l-23.875-18.81l-24.964 8.772l-9.584-4.907l39.04 87.842L383.923 494H494v-28.512L462.713 478.2l-6.776-16.678L494 446.06V211.176l-23.438-26.463l-21.654-67.371l-33.547 32.666l-107.77-13.873l-28.019-29.096l12.967-12.486l23.629 24.539l92.867 11.953l31.442-30.615l-52.79-61.801zm27.53 177.74l34.177 41.428l28.863-6.56l-4.136-13.59l17.22-5.243l9.77 32.098l-58.543 13.307l-31.377-38.033l-33.086 19.853l-9.262-15.436z"/></svg>""";
+    private static readonly string IconSkull      = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="M425.344 22.22c-9.027.085-18.7 5.826-24.344 19.405c-11.143 26.803-31.93 59.156-58.563 93.47a141.2 141.2 0 0 1 27.5 30.31c35.1-26.57 68.882-46.81 98.125-56.75c44.6-15.16 12.02-69.72-35.343-35.343c26.91-27.842 11.107-51.27-7.376-51.093zm-341.22.03c-18.5.378-37.604 23.962-16.343 49.875C31.523 38.635-.802 85.48 37.095 102.813c28.085 12.844 62.54 35.66 99.062 64.343c8.125-12.5 18.207-23.61 29.78-32.937c-26.782-35.743-48.44-69.835-61.78-98.47c-4.515-9.69-12.22-13.66-20.03-13.5zm169.5 99.688c-67.104 0-121.31 54.21-121.31 121.312c0 44.676 24.04 83.613 59.905 104.656v56.406h18.718v-47.468a120 120 0 0 0 16.093 4.78v42.688h18.69v-40.03a124 124 0 0 0 15.749 0v40.03h18.686v-42.687a121 121 0 0 0 16.094-4.78v47.467h18.688V347.97c35.92-21.03 60-60.003 60-104.72c0-67.105-54.208-121.313-121.313-121.313zm-66.874 88.218c19.88 0 36 16.12 36 36s-16.12 36-36 36s-36-16.12-36-36s16.12-36 36-36m133.563 0c19.878 0 36 16.12 36 36s-16.122 36-36 36c-19.88 0-36-16.12-36-36s16.12-36 36-36m-66.72 52.344l29.938 48.188h-59.874l29.938-48.188zm-107.28 70.563c-40.263 32.472-78.546 58.41-109.22 72.437c-37.896 17.334-5.57 64.146 30.688 30.656c-30.237 36.854 21.167 69.05 36.376 36.406c15.072-32.352 40.727-71.7 72.438-112.5a141 141 0 0 1-30.28-27zm213.156 1.718a141 141 0 0 1-27.908 24.69c31.846 39.39 56.82 76.862 69.438 107.217c17.203 41.383 71.774 9.722 31.72-31.718c47.363 34.376 79.94-20.185 35.342-35.345c-32.146-10.926-69.758-34.3-108.593-64.844z"/></svg>""";
+    private static readonly string IconAnchor     = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v12m-8-8a8 8 0 0 0 16 0m1 0h-2M5 13H3m6-7a3 3 0 1 0 6 0a3 3 0 1 0-6 0"/></svg>""";
+    private static readonly string IconBird       = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="m23 11.5l-3.05-1.13c-.26-1.15-.91-1.81-.91-1.81a4.19 4.19 0 0 0-5.93 0l-1.48 1.48L5 3c-1 4 0 8 2.45 11.22L2 19.5s8.89 2 14.07-2.05c2.76-2.16 3.38-3.42 3.77-4.75zm-5.29.22c-.39.39-1.03.39-1.42 0a.996.996 0 0 1 0-1.41c.39-.39 1.03-.39 1.42 0s.39 1.02 0 1.41"/></svg>""";
+    private static readonly string IconMtnCave    = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="M195.344 71.438a23.95 23.95 0 0 0-10.938 3.062c-9.987 5.66-16.774 16.198-25.062 31.72c-8.288 15.52-17.55 36.4-29.03 63.218C107.35 223.07 75.606 300.42 26.843 403.875a9.5 9.5 0 1 0 17.187 8.094c48.966-103.882 80.897-181.682 103.75-235.064c11.428-26.69 20.6-47.274 28.314-61.72c7.713-14.443 14.5-22.366 17.656-24.155c1.578-.893 1.773-.822 2.78-.56c1.01.26 3.136 1.348 6 4.155c5.732 5.614 13.667 17.43 23.314 34.438c19.077 33.636 45.742 87.6 87.28 159.03a2097 2097 0 0 1-14.25 33.876a9.5 9.5 0 1 0 17.438 7.53c20.076-46.524 33.676-83.107 44.188-106.47c5.256-11.68 9.878-20.06 13.22-24.093c1.445-1.745 2.452-2.466 2.874-2.718c.654.36 4.928 3.886 9.937 12.468c5.162 8.84 11.398 22.197 18.845 40c14.893 35.605 34.786 89.108 63.313 162.656a9.503 9.503 0 1 0 17.718-6.875c-28.48-73.43-48.32-126.835-63.5-163.126c-7.59-18.146-13.993-31.983-19.97-42.22c-5.974-10.235-11.09-17.537-19.78-20.843c-2.172-.825-4.596-1.186-7-1.124s-4.778.553-6.875 1.47c-4.192 1.83-7.355 4.77-10.186 8.186c-5.664 6.836-10.42 16.147-15.938 28.407c-6.044 13.432-12.834 30.485-20.97 50.624c-37.043-64.58-61.375-113.65-79.81-146.156c-9.925-17.5-17.96-30.198-26.564-38.626c-4.3-4.213-8.923-7.548-14.53-9a20.8 20.8 0 0 0-5.939-.624zm5.03 258.78c-39.944 0-72.31 39.03-72.31 87.188h144.624c0-48.16-32.368-87.187-72.313-87.187z"/></svg>""";
+    private static readonly string IconLighthouse = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="m136 40.938l-88 44V184h176V84.937l-88-44zM480 48l-240 80v32l240 64zM64 96h31.406l.313 64H64zm47.406 0h48l.313 64h-48l-.314-64zm64 0H208v64h-32.28zM79.312 201L19.094 487h233.812l-.094-.438l.125.094c7.327-10.582 26.22-22.905 46.032-28.22c10.19 18.728 29.766 30.564 53.03 30.564h4.125l2.688-3.125c11.347-13.123 19.005-24.272 35.843-27.906C404.94 477.692 426.263 489 448 489h5.25l2.594-4.563c8.78-15.503 11.158-17.993 28.844-28.75l-9.375-15.375c-16.44 10-24.038 17.37-32.063 30.344c-15.508-1.633-29.613-11.073-34.75-25.656l-2.344-6.625l-7 .656c-26.106 2.45-39.755 18.452-51.062 31.72c-17.555-1.233-29.83-10.616-35.688-25.97l-2.656-6.967l-7.375 1.343c-20.77 3.78-40.482 13.32-54.094 25.813L192.688 201H79.313zM87 256h18v48H87zm80 128h18v48h-18z"/></svg>""";
+    private static readonly string IconPalm       = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="M179.125 20.625c-28.052.12-54.046 5.813-66.72 9.78c0 0 114.968 19.51 124.532 98.876C149.573 3.32 54.28 155.657 54.28 155.657c19.868-5.212 76.76-20.682 114.75-14.156c25.992 4.465 51.33 28.03 50.236 27.733c-61.943 15.24-160.35 290.92-143.64 313.308c14.9 17.12 29.816 11.28 44.718 2.595c7.376-58.425 64.938-314.765 135.375-294.072c.01.003.02-.003.03 0c5.93 2.03 11.54 5.59 11.844 11.03c.58 10.363-6.11 27.3-4.53 39.063c3.662 27.296 9.007 36.79 16.78 46.313c18.564-10.435 36.326-48.057 40-67.564c16.634 7.284 43.373 24.155 65.187 86.813c11.404-58.716-5.042-105.03-59.03-125.595c23.38-10.105 125.142 41.03 137.563 69.53C475.648 199.264 390.167 136.378 319 139.72c13.644-3.56 28.638.6 42.906-9.907c19.146-14.098 41.474-26.24 62.28-39.282c-69.972-30.435-134.545-15.407-139.092 16.095c-3.573-69.916-57.83-86.204-105.97-86z"/></svg>""";
+    private static readonly string IconTemple     = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="M41.02 33v46H471V33zm62.48 64L34.59 479H142.8V97zm57.3 0v211.6c8 1.2 16.9-.5 27.3-4.7c36.9-18.9 63.4-52.9 88.1-93.1c21.9-35.7 42.1-76.1 67-113.8h-54c-5.8 50.3-52.6 118-81.2 151c24.6-45.2 60.9-111.8 60.3-151h-51.9c-2.6 29.1-12.6 58.4-24.4 87c4.8-30 10.7-58.2 8.3-87zm208.4 0v382h108.2L408.5 97zM186.4 323.5c-8.6 2.5-17.3 3.7-25.6 3V479h53.7c-2.3-46.2 2.4-65.2-28.1-155.5"/></svg>""";
+    private static readonly string IconBridge     = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><path fill="currentColor" d="M255.063 18.25L209.97 140c-49.033 13.39-90.27 48.118-114.876 94.594h-56.25v93.125h112.5c3.17-59.343 48.313-106.44 103.72-106.44c55.404 0 100.547 47.1 103.717 106.44h112.5v-93.126h-56.25c-24.6-46.47-65.85-81.2-114.874-94.594zM38.843 344.313v150.25H151.47v-150.25zm319.813 0v150.25H471.28v-150.25z"/></svg>""";
+
+    // ── Area type system ───────────────────────────────────────────────
+    private enum AreaType
+    {
+        Grass, Forest, DeepForest,
+        Lake, Mountain, Cliff,
+        Desert, DeepDesert,
+        Swamp, DeepSwamp
+    }
+
+    private record AreaInfo(string Name, string CssClass, string Icon, string IconColor, string Description);
+
+    private static readonly Dictionary<AreaType, AreaInfo> AreaInfoMap = new()
+    {
+        [AreaType.Grass]      = new("Grassland",   "grass",      IconGrass,  "#6a9a40", "Open plains stretch before you. The wind whispers through tall grasses."),
+        [AreaType.Forest]     = new("Forest",       "forest",     IconTree,   "#3a7a28", "Ancient trees crowd the path. Sunlight filters through the canopy above."),
+        [AreaType.DeepForest] = new("Deep Forest",  "deepforest", IconTree,   "#1a4a12", "The trees press close. Darkness gathers beneath the ancient boughs."),
+        [AreaType.Lake]       = new("Lake",          "lake",       IconWaves,  "#3a6ab0", "Still waters reflect a grey sky. Something moves beneath the surface."),
+        [AreaType.Mountain]   = new("Mountain",      "mountain",   IconMtn,    "#7a7a9a", "Rocky slopes rise steeply. The air grows thin and cold."),
+        [AreaType.Cliff]      = new("Cliff",         "cliff",      IconCliff,  "#5a5a6a", "Sheer rock faces drop away on all sides. A misstep means certain death."),
+        [AreaType.Desert]     = new("Desert",        "desert",     IconDesert, "#c8a040", "The sun beats down on shifting sands. Heat shimmers on the horizon."),
+        [AreaType.DeepDesert] = new("Deep Desert",   "deepdesert", IconDesert, "#8a5010", "The sands stretch endlessly in all directions. The heat is merciless."),
+        [AreaType.Swamp]      = new("Swamp",         "swamp",      IconSwamp,  "#5a7a30", "Murky water surrounds twisted trees. Strange sounds echo in the mist."),
+        [AreaType.DeepSwamp]  = new("Deep Swamp",    "deepswamp",  IconSwamp,  "#2a4a14", "Black water and rotting wood. Something ancient lurks in the depths."),
+    };
+
+    private static readonly AreaType[] BaseAreaPool =
+    [
+        AreaType.Grass, AreaType.Grass, AreaType.Grass,
+        AreaType.Forest, AreaType.Forest,
+        AreaType.Lake,
+        AreaType.Mountain, AreaType.Mountain,
+        AreaType.Cliff,
+        AreaType.Desert,
+        AreaType.Swamp,
+    ];
+
+    // ── Data models ────────────────────────────────────────────────────
+    private record MapRow(bool IsOffset, AreaType?[] Slots);
+    private record InvItem(string Icon, string Name, string Desc, string Uses);
+    private record StatusEffect(string Icon, string Label);
+
+    // ── State ──────────────────────────────────────────────────────────
+    private bool             initialized;
+    private MapRow[]         mapRows   = [];
+    private (int Row, int Col) playerPos;
+    private List<string>     areaPath  = [];
+    private InvItem?[]       invItems  = new InvItem?[12];
+    private StatusEffect[]   statuses  = [];
+
+    // Stub character data
+    private string charName  = "Conan";
+    private int    charLevel = 1;
+    private int    xpCurrent = 0;
+    private int    xpNext    = 100;
+    private int    strVal    = 8;
+    private int    agiVal    = 5;
+    private int    tghVal    = 6;
+
+    private int XpPct => xpNext > 0 ? (int)(xpCurrent * 100.0 / xpNext) : 0;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+    protected override void OnInitialized()
+    {
+        UserSession.OnChange += HandleUserChanged;
+        invItems[0] = new InvItem(IconDagger, "Iron Dagger",  "A simple iron blade. Light but reliable.", "Attack");
+        invItems[1] = new InvItem(IconBread,  "Field Ration", "Dried meat and hard tack.",                "Restore 5 HP");
+        GenerateMap();
+        ResetAreaBreadcrumb();
+        initialized = true;
+    }
+
+    // ── Map generation ─────────────────────────────────────────────────
+    private void GenerateMap()
+    {
+        var rng = new Random();
+
+        // 1. Pick 10 random slot positions
+        var all = Enumerable.Range(0, 3)
+            .SelectMany(r => Enumerable.Range(0, 5).Select(c => (R: r, C: c)))
+            .ToList();
+        var chosen = all.OrderBy(_ => rng.Next()).Take(10).ToHashSet();
+
+        // 2. Guarantee bottom row and starting position
+        if (!chosen.Any(p => p.R == 2)) chosen.Add((2, rng.Next(5)));
+        var bottomSlots = chosen.Where(p => p.R == 2).ToList();
+        var start       = bottomSlots[rng.Next(bottomSlots.Count)];
+        playerPos       = (start.R, start.C);
+
+        // 3. Guarantee straight upward path from starting column
+        chosen.Add((1, playerPos.Col));
+        chosen.Add((0, playerPos.Col));
+
+        // 4. Determine per-row offsets
+        var offsets = new bool[3];
+        for (var i = 0; i < 3; i++) offsets[i] = rng.Next(2) == 1;
+
+        // 5. Assign base area types
+        var typeGrid = new AreaType?[3, 5];
+        foreach (var (r, c) in chosen)
+            typeGrid[r, c] = BaseAreaPool[rng.Next(BaseAreaPool.Length)];
+
+        // 6. Deep upgrade pass — a slot becomes deep if ALL filled neighbours
+        //    share the same base type (offset-aware adjacency)
+        (int S, int E) CssRange(int row, int col) =>
+            offsets[row] ? (col * 2 + 2, col * 2 + 3) : (col * 2 + 1, col * 2 + 2);
+
+        bool AreAdj(int r1, int c1, int r2, int c2)
+        {
+            if (r1 == r2) return Math.Abs(c1 - c2) == 1;
+            if (Math.Abs(r1 - r2) != 1) return false;
+            var (s1, e1) = CssRange(r1, c1);
+            var (s2, e2) = CssRange(r2, c2);
+            return s1 <= e2 && s2 <= e1;
+        }
+
+        foreach (var (r, c) in chosen.OrderBy(_ => rng.Next()))
+        {
+            if (typeGrid[r, c] is not AreaType t) continue;
+            if (GetDeepType(t) is not AreaType deepT) continue;
+            var neighbours = chosen
+                .Where(n => (n.R != r || n.C != c) && AreAdj(r, c, n.R, n.C))
+                .ToList();
+            if (neighbours.Count > 0 &&
+                neighbours.All(n => typeGrid[n.R, n.C].HasValue &&
+                                    GetBaseType(typeGrid[n.R, n.C]!.Value) == t) &&
+                rng.Next(3) == 0)
+            {
+                typeGrid[r, c] = deepT;
+            }
+        }
+
+        // 7. Build mapRows
+        mapRows = Enumerable.Range(0, 3).Select(r =>
+            new MapRow(
+                IsOffset: offsets[r],
+                Slots: Enumerable.Range(0, 5)
+                    .Select(c => chosen.Contains((r, c)) ? typeGrid[r, c] : null)
+                    .ToArray()
+            )
+        ).ToArray();
+    }
+
+    private static AreaType? GetDeepType(AreaType t) => t switch
+    {
+        AreaType.Forest  => AreaType.DeepForest,
+        AreaType.Desert  => AreaType.DeepDesert,
+        AreaType.Swamp   => AreaType.DeepSwamp,
+        _ => null
+    };
+
+    private static AreaType GetBaseType(AreaType t) => t switch
+    {
+        AreaType.DeepForest => AreaType.Forest,
+        AreaType.DeepDesert => AreaType.Desert,
+        AreaType.DeepSwamp  => AreaType.Swamp,
+        _ => t
+    };
+
+    // ── Movement helpers ───────────────────────────────────────────────
+    // Returns CSS grid column range [start, end] for a slot, accounting for row offset.
+    // Non-offset row, slot c  → CSS cols [2c+1, 2c+2]
+    // Offset row, slot c      → CSS cols [2c+2, 2c+3]
+    // Two slots in adjacent rows are visually adjacent when their ranges overlap.
+    private (int Start, int End) GetCssColRange(int row, int col) =>
+        mapRows[row].IsOffset
+            ? (col * 2 + 2, col * 2 + 3)
+            : (col * 2 + 1, col * 2 + 2);
+
+    private bool AreVerticallyAdjacent(int r1, int c1, int r2, int c2)
+    {
+        var (s1, e1) = GetCssColRange(r1, c1);
+        var (s2, e2) = GetCssColRange(r2, c2);
+        return s1 <= e2 && s2 <= e1;
+    }
+
+    private bool IsFilledSlot(int row, int col) =>
+        row >= 0 && row < mapRows.Length &&
+        col >= 0 && col < 5 &&
+        mapRows[row].Slots[col].HasValue;
+
+    private bool IsValidMove(int row, int col)
+    {
+        if (!IsFilledSlot(row, col)) return false;
+        // Horizontal — same row, one column left or right
+        if (row == playerPos.Row && Math.Abs(col - playerPos.Col) == 1) return true;
+        // Upward — one row above, visually overlapping (handles offset rows correctly)
+        if (row == playerPos.Row - 1)
+            return AreVerticallyAdjacent(playerPos.Row, playerPos.Col, row, col);
+        return false;
+    }
+
+    private void OnMapRectClick(int row, int col)
+    {
+        if (!IsValidMove(row, col)) return;
+        var movingUp = row < playerPos.Row;
+        playerPos = (row, col);
+        if (movingUp) ShiftMapUp();
+        ResetAreaBreadcrumb();
+    }
+
+    // ── Layer shift ────────────────────────────────────────────────────
+    // On upward move: old middle → new bottom, old top → new middle,
+    // fresh row → new top.  Player always lands at row 2.
+    private void ShiftMapUp()
+    {
+        var rng = new Random();
+
+        var newMiddleSlots = (AreaType?[])mapRows[0].Slots.Clone();
+        var newBottomRow   = mapRows[1];
+
+        if (!newMiddleSlots[playerPos.Col].HasValue)
+            newMiddleSlots[playerPos.Col] = BaseAreaPool[rng.Next(BaseAreaPool.Length)];
+
+        var newTopSlots = GenerateNewRow(rng);
+        if (!newTopSlots[playerPos.Col].HasValue)
+            newTopSlots[playerPos.Col] = BaseAreaPool[rng.Next(BaseAreaPool.Length)];
+
+        mapRows = [
+            new MapRow(rng.Next(2) == 1, newTopSlots),
+            new MapRow(mapRows[0].IsOffset, newMiddleSlots),
+            newBottomRow,
+        ];
+
+        playerPos = (2, playerPos.Col);
+    }
+
+    private AreaType?[] GenerateNewRow(Random rng)
+    {
+        var slots = new AreaType?[5];
+        foreach (var c in Enumerable.Range(0, 5).OrderBy(_ => rng.Next()).Take(rng.Next(2, 5)))
+            slots[c] = BaseAreaPool[rng.Next(BaseAreaPool.Length)];
+        return slots;
+    }
+
+    // ── Area info helpers ──────────────────────────────────────────────
+    private static AreaInfo GetAreaInfo(AreaType t) =>
+        AreaInfoMap.TryGetValue(t, out var ai) ? ai : AreaInfoMap[AreaType.Grass];
+
+    private AreaInfo? GetCurrentAreaInfo()
+    {
+        var slot = mapRows[playerPos.Row].Slots[playerPos.Col];
+        return slot.HasValue ? GetAreaInfo(slot.Value) : null;
+    }
+
+    private void ResetAreaBreadcrumb()
+    {
+        var info = GetCurrentAreaInfo();
+        areaPath = info != null ? [info.Name] : ["Unknown Area"];
+    }
+
+    private string GetTerrainClass()
+    {
+        var slot = mapRows[playerPos.Row].Slots[playerPos.Col];
+        return slot switch
+        {
+            AreaType.Grass                            => "grass",
+            AreaType.Forest or AreaType.DeepForest    => "forest",
+            AreaType.Lake                             => "lake",
+            AreaType.Mountain or AreaType.Cliff       => "mountain",
+            AreaType.Desert or AreaType.DeepDesert    => "desert",
+            AreaType.Swamp or AreaType.DeepSwamp      => "swamp",
+            _ => "default"
+        };
+    }
+
+    // ── Breadcrumb navigation ──────────────────────────────────────────
+    private void Explore()
+    {
+        // TODO: populate with real sub-area content per area type
+        areaPath.Add("[ sub-area — coming soon ]");
+    }
+
+    private void NavigateToCrumb(int idx)
+    {
+        if (idx >= 0 && idx < areaPath.Count)
+            areaPath = areaPath.Take(idx + 1).ToList();
+    }
+
+    private void HandleUserChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => UserSession.OnChange -= HandleUserChanged;
+}

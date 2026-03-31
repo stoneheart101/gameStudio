@@ -12,7 +12,10 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git rm:*)",
-      "Bash(gh repo:*)"
+      "Bash(gh repo:*)",
+      "mcp__better-icons__search_icons",
+      "mcp__better-icons__get_icons",
+      "mcp__better-icons__get_icon"
     ]
   }
 }

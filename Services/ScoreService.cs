@@ -6,7 +6,7 @@ namespace GameStudio.Services;
 
 public class ScoreService(AppDbContext db)
 {
-    public static readonly string[] Games = ["Flappy", "Dodge", "UmmFood", "Explorer", "CowCoral"];
+    public static readonly string[] Games = ["Flappy", "Dodge", "UmmFood", "Explorer", "CowCoral", "Forward"];
 
     public async Task<ScoreEntry> SaveScoreAsync(int userId, string gameName, int score)
     {

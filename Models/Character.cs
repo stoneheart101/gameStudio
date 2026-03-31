@@ -16,7 +16,9 @@ public class Character
     public int Toughness { get; set; } = 1;
     public int Magic { get; set; } = 1;
     public int Health { get; set; } = 1;
+    public int Level { get; set; } = 1;
+    public int Experience { get; set; } = 0;
 
-    // Derived: HP = Health * 5 + Toughness
-    public int MaxHitPoints => Health * 5 + Toughness;
+    // Derived: HP = Health * 5 + Toughness * 2
+    public int MaxHitPoints => Health * 5 + Toughness * 2;
 }

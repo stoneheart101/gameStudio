@@ -127,7 +127,7 @@ else if (_gameState == GameState.CharCreate)
         </div>
 
         <div class="ex-stat-preview">
-            HIT POINTS: <span class="ex-stat-hp">@(_statAlloc["Health"] * 5 + _statAlloc["Toughness"])</span>
+            HIT POINTS: <span class="ex-stat-hp">@(_statAlloc["Health"] * 5 + _statAlloc["Toughness"] * 2)</span>
         </div>
 
         @if (_createError != "")
@@ -183,6 +183,11 @@ else if (_gameState == GameState.Playing && _character != null)
                         <div class="ex-play-hp-fill" style="width:@(Math.Max(0, _playerHp * 100 / Math.Max(1, _playerMaxHp)))%"></div>
                     </div>
                     <span class="ex-play-hp-text">@_playerHp / @_playerMaxHp</span>
+                    <!-- XP bar -->
+                    <div class="explorer-stat-label" style="margin-top:6px; margin-bottom:4px;">LVL @_playerLevel — XP @_playerXp / @_xpToNextLevel</div>
+                    <div class="ex-play-hp-bar">
+                        <div class="ex-play-hp-fill" style="width:@(Math.Min(100, _playerXp * 100 / Math.Max(1, _xpToNextLevel)))%; background:var(--ex-gold);"></div>
+                    </div>
                     <!-- 2-column stat table -->
                     <div class="explorer-stat-table">
                         <div class="explorer-stat-row2"><span class="explorer-stat-label2">SPEED</span><span class="explorer-stat-val2">@_character.Speed</span></div>
@@ -345,10 +350,21 @@ else if (_gameState == GameState.Playing && _character != null)
                                     @SvgIcon("bow", 12) RANGED (Bow)
                                 </button>
                             }
+                            <button class="ex-btn ex-btn-gold ex-btn-full" @onclick='() => PlayerAttack("magic")'>
+                                @SvgIcon("target", 12) MAGIC (@_character.Magic dmg, ignores armor)
+                            </button>
                             @if (HasHealingPotion())
                             {
                                 <button class="ex-btn ex-btn-heal ex-btn-full" @onclick="UseHealingPotion">
-                                    @SvgIcon("potion", 12) HEAL (+5 HP)
+                                    @SvgIcon("potion", 12) HEAL (+@(5 + (_character!.Health / 2)) HP)
+                                </button>
+                            }
+                            @foreach (var scroll in GetUsableAttackScrolls())
+                            {
+                                var s = scroll;
+                                var sName = s.Name.Replace("Scroll of ", "");
+                                <button class="ex-btn ex-btn-gold ex-btn-full" @onclick="() => UseScrollInCombat(s)">
+                                    @SvgIcon("scroll", 12) @sName.ToUpper() (Lvl @s.ScrollLevel)
                                 </button>
                             }
                             <button class="ex-btn ex-btn-full" @onclick="AttemptFlee">
@@ -386,11 +402,23 @@ else if (_gameState == GameState.Playing && _character != null)
                     {
                         <div class="rp-challenge-info">
                             Requires: @_currentChallenge.StatName!.ToUpper() (yours: @GetCharStat(_character, _currentChallenge.StatName!))
+                            @if (_scrollBonusStat == _currentChallenge.StatName && _scrollStatBonus > 0)
+                            {
+                                <span style="color:var(--ex-gold)"> +@_scrollStatBonus (scroll ready)</span>
+                            }
                         </div>
                         <button class="ex-btn ex-btn-gold ex-btn-full" @onclick="AttemptStatCheck">
                             @SvgIcon("target", 12) ATTEMPT
                         </button>
-                        @if (!_isExitChallenge && (_currentChallenge?.AllowRetreat ?? true))
+                        @foreach (var scroll in GetUsableStatScrolls(_currentChallenge.StatName!))
+                        {
+                            var s = scroll;
+                            var alreadyActive = _scrollBonusStat == _currentChallenge.StatName && _scrollStatBonus > 0;
+                            <button class="ex-btn ex-btn-full" @onclick="() => ActivateScrollBonus(s)" disabled="@alreadyActive">
+                                @SvgIcon("scroll", 12) USE @s.Name.Replace("Scroll of ", "").ToUpper() (+4 @_currentChallenge.StatName)
+                            </button>
+                        }
+                        @if (!_isExitChallenge)
                         {
                             <button class="ex-btn ex-btn-full" @onclick="RetreatFromChallenge">
                                 @SvgIcon("arrow-left", 12) RETREAT
@@ -413,7 +441,7 @@ else if (_gameState == GameState.Playing && _character != null)
                         <button class="ex-btn ex-btn-full" @onclick="AttemptRiddleStatRoll">
                             @SvgIcon("target", 12) ROLL WIT (SMARTS)
                         </button>
-                        @if (!_isExitChallenge && (_currentChallenge?.AllowRetreat ?? true))
+                        @if (!_isExitChallenge)
                         {
                             <button class="ex-btn ex-btn-full" @onclick="RetreatFromChallenge">
                                 @SvgIcon("arrow-left", 12) RETREAT
@@ -428,7 +456,7 @@ else if (_gameState == GameState.Playing && _character != null)
                         <button class="ex-btn ex-btn-gold ex-btn-full" @onclick="AttemptItemChallenge">
                             @SvgIcon("shield", 12) OFFER ITEM
                         </button>
-                        @if (!_isExitChallenge && (_currentChallenge?.AllowRetreat ?? true))
+                        @if (!_isExitChallenge)
                         {
                             <button class="ex-btn ex-btn-full" @onclick="RetreatFromChallenge">
                                 @SvgIcon("arrow-left", 12) RETREAT
@@ -440,13 +468,47 @@ else if (_gameState == GameState.Playing && _character != null)
                         <button class="ex-btn ex-btn-gold ex-btn-full" @onclick="StartCombatChallenge">
                             @SvgIcon("swords", 12) FIGHT
                         </button>
-                        @if (!_isExitChallenge && (_currentChallenge?.AllowRetreat ?? true))
+                        @if (!_isExitChallenge)
                         {
                             <button class="ex-btn ex-btn-full" @onclick="RetreatFromChallenge">
                                 @SvgIcon("arrow-left", 12) RETREAT
                             </button>
                         }
                     }
+                }
+                else if (_levelUpPending)
+                {
+                    <!-- ═══ LEVEL UP panel ═══ -->
+                    <div class="explorer-panel-title">⬆ LEVEL UP! LEVEL @_playerLevel</div>
+
+                    <div class="explorer-stat-label" style="margin-bottom:4px;">XP: @_playerXp / @_xpToNextLevel</div>
+                    <div class="ex-play-hp-bar">
+                        <div class="ex-play-hp-fill" style="width:@(Math.Min(100, _playerXp * 100 / Math.Max(1, _xpToNextLevel)))%; background:var(--ex-gold);"></div>
+                    </div>
+
+                    <div class="ex-screen-subtitle" style="margin-top:12px;">DISTRIBUTE 3 POINTS</div>
+                    <div class="ex-screen-subtitle" style="font-size:7px; color:var(--ex-stone);">
+                        POINTS REMAINING: <span style="color:@(_levelUpPointsRemaining == 0 ? "var(--ex-gold)" : "#e05050")">@_levelUpPointsRemaining</span> / 3
+                    </div>
+
+                    <div class="ex-stat-alloc">
+                        @foreach (var stat in _statNames)
+                        {
+                            var s = stat;
+                            var val = _levelUpAlloc[s];
+                            <div class="ex-stat-alloc-row">
+                                <span class="ex-stat-alloc-label">@s.ToUpper()</span>
+                                <button class="ex-stat-btn" @onclick="() => LevelUpDecrementStat(s)" disabled="@(val <= 0)">−</button>
+                                <span class="ex-stat-alloc-val">@val</span>
+                                <button class="ex-stat-btn" @onclick="() => LevelUpIncrementStat(s)" disabled="@(_levelUpPointsRemaining <= 0)">+</button>
+                            </div>
+                        }
+                    </div>
+
+                    <button class="ex-btn ex-btn-gold ex-btn-full" @onclick="ConfirmLevelUp"
+                            disabled="@(_levelUpPointsRemaining != 0)">
+                        @SvgIcon("circle-plus", 12) CONFIRM LEVEL UP
+                    </button>
                 }
                 else
                 {
@@ -483,8 +545,11 @@ else if (_gameState == GameState.Playing && _character != null)
                         @if (_playerHp < _playerMaxHp)
                         {
                             var restHeal = Math.Max(1, (_playerMaxHp - _playerHp) / 2);
-                            <button class="ex-btn ex-btn-rest ex-btn-full" @onclick="Rest">
-                                @SvgIcon("moon", 12) REST (+@restHeal HP)
+                            var foodCount = _inventory.Count(i => i.Name == "Food");
+                            var hasFood = foodCount > 0;
+                            <button class="ex-btn ex-btn-rest ex-btn-full" @onclick="Rest" disabled="@(!hasFood)"
+                                    title="@(hasFood ? $"Rest and heal {restHeal} HP (uses 1 food)" : "No food — find food from defeated creatures")">
+                                @SvgIcon("moon", 12) REST (+@restHeal HP) [@(hasFood ? $"Food: {foodCount}" : "No Food")]
                             </button>
                         }
                         <div class="location-hint">
@@ -568,7 +633,7 @@ else if (_gameState == GameState.Playing && _character != null)
     }
 
     // ── Inventory ────────────────────────────────────────────────────────────
-    private record InventoryItem(string Name, string Icon, int Damage = 0, string Tooltip = "");
+    private record InventoryItem(string Name, string Icon, int Damage = 0, string Tooltip = "", int ScrollLevel = 0);
 
     // ── Challenge system ─────────────────────────────────────────────────────
     private enum ChallengeType { Combat, StatCheck, Riddle, ItemRequired }
@@ -680,6 +745,18 @@ else if (_gameState == GameState.Playing && _character != null)
     private HashSet<string> _usedRiddleTitles = [];
     // Character delete confirm
     private int? _deleteConfirmId = null;
+
+    // XP / Level state
+    private int _playerLevel;
+    private int _playerXp;
+    private int _xpToNextLevel;
+    private bool _levelUpPending;
+    private Dictionary<string, int> _levelUpAlloc = _statNames.ToDictionary(s => s, _ => 0);
+    private int _levelUpPointsRemaining;
+
+    // Scroll bonus state (for stat-assist scrolls during challenges)
+    private int _scrollStatBonus = 0;
+    private string _scrollBonusStat = "";
 
     // Movement locked when challenge/combat active or trapped by exit challenge
     private bool MovementLocked => _activeChallenge || _activeCombat || _activeExitChallenge;
@@ -804,6 +881,7 @@ else if (_gameState == GameState.Playing && _character != null)
         [
             new InventoryItem("Dagger", "sword", 4, "Dagger — Melee weapon, 4 damage"),
             new InventoryItem("Healing Potion", "potion", 0, "Healing Potion — Restores 5 HP"),
+            new InventoryItem("Food", "apple", 0, "Food — Eat when resting to restore HP"),
         ];
         _statusHistory = ["Your adventure begins. The realm awaits."];
         _playerMaxHp = _character!.MaxHitPoints;
@@ -813,6 +891,12 @@ else if (_gameState == GameState.Playing && _character != null)
         _activeExitChallenge = false;
         _isExitChallenge = false;
         _usedRiddleTitles = [];
+        _playerLevel = _character!.Level;
+        _playerXp = _character!.Experience;
+        _xpToNextLevel = _playerLevel * 100;
+        _levelUpPending = false;
+        _levelUpPointsRemaining = 0;
+        _levelUpAlloc = _statNames.ToDictionary(s => s, _ => 0);
 
         var start = GetOrGenerateTile(0, 0, forceType: TileType.Grassland);
         start.HasChallenge = false;
@@ -1294,14 +1378,14 @@ else if (_gameState == GameState.Playing && _character != null)
     private string GetMeleeWeaponName()
     {
         // Pick best melee weapon by damage
-        var melee = _inventory.Where(i => i.Name == "Dagger" || i.Name == "Sword")
+        var melee = _inventory.Where(i => i.Name == "Dagger" || i.Name == "Sword" || i.Name == "Boar Tusk")
             .OrderByDescending(i => i.Damage).FirstOrDefault();
         return melee?.Name ?? "Fists";
     }
 
     private int GetMeleeWeaponDamage()
     {
-        var melee = _inventory.Where(i => i.Name == "Dagger" || i.Name == "Sword")
+        var melee = _inventory.Where(i => i.Name == "Dagger" || i.Name == "Sword" || i.Name == "Boar Tusk")
             .OrderByDescending(i => i.Damage).FirstOrDefault();
         return melee?.Damage ?? 1;
     }
@@ -1442,7 +1526,13 @@ else if (_gameState == GameState.Playing && _character != null)
         }
         _playerX = tx;
         _playerY = ty;
+        bool isFirstVisit = !tile.Visited;
         MarkVisited(tile);
+        if (isFirstVisit)
+        {
+            int xp = tile.Type is TileType.Cliff or TileType.Mountain ? 7 : 2;
+            AwardXp(xp);
+        }
 
         // Trigger exit challenge if present and not yet cleared — open challenge panel immediately
         if (tile.HasExitChallenge && !tile.ExitChallengeCleared)
@@ -1465,13 +1555,16 @@ else if (_gameState == GameState.Playing && _character != null)
         if (_currentChallenge == null || _character == null) return;
         var statVal = GetCharStat(_character, _currentChallenge.StatName!);
         var roll = _rng.Next(1, 21);
-        var total = roll + statVal;
+        var scrollBonus = (_scrollBonusStat == _currentChallenge.StatName) ? _scrollStatBonus : 0;
+        _scrollStatBonus = 0; _scrollBonusStat = "";
+        var total = roll + statVal + scrollBonus;
+        var bonusDesc = scrollBonus > 0 ? $"+{scrollBonus}(scroll)" : "";
         var dc = _currentChallenge.Difficulty + 10;
 
         if (total >= dc)
         {
             _challengeSuccess = true;
-            _challengeResultMsg = $"Rolled {roll}+{statVal}={total} vs DC {dc}. SUCCESS!";
+            _challengeResultMsg = $"Rolled {roll}+{statVal}{bonusDesc}={total} vs DC {dc}. SUCCESS!";
         }
         else
         {
@@ -1485,9 +1578,9 @@ else if (_gameState == GameState.Playing && _character != null)
                 _          => $"The challenge strikes back — {dmg} damage."
             };
             var (avoided, mitigMsg) = TryMitigationRoll("Toughness", dmg,
-                $"Rolled {roll}+{statVal}={total} vs DC {dc}. FAILED! {flavor}");
+                $"Rolled {roll}+{statVal}{bonusDesc}={total} vs DC {dc}. FAILED! {flavor}");
             _challengeResultMsg = avoided
-                ? $"Rolled {roll}+{statVal}={total} vs DC {dc}. FAILED! {mitigMsg}"
+                ? $"Rolled {roll}+{statVal}{bonusDesc}={total} vs DC {dc}. FAILED! {mitigMsg}"
                 : mitigMsg;
         }
         _challengeResolved = true;
@@ -1616,6 +1709,12 @@ else if (_gameState == GameState.Playing && _character != null)
                 if (tile != null) tile.ExitChallengeCleared = true;
                 _activeExitChallenge = false;
                 PushStatus("You break free! The way is clear — you may move again.");
+                var exitXp = _currentChallenge?.Type switch {
+                    ChallengeType.Riddle       => 15,
+                    ChallengeType.ItemRequired => 5,
+                    _ => 10
+                };
+                AwardXp(exitXp);
             }
             else
             {
@@ -1635,12 +1734,29 @@ else if (_gameState == GameState.Playing && _character != null)
             var (tx, ty) = _pendingMoveTo.Value;
             var tile = GetOrGenerateTile(tx, ty);
             tile.ChallengeCleared = true;
+            var entryXp = _currentChallenge?.Type switch {
+                ChallengeType.Riddle       => 15,
+                ChallengeType.ItemRequired => 5,
+                _ => 10
+            };
+            AwardXp(entryXp);
             MoveToTile(tx, ty, tile);
             PushStatus("Challenge overcome! You advance.");
         }
         else
         {
-            // Failed entry challenge — mark tile as retreated
+            // Failed entry challenge
+            if (_currentChallenge?.AllowRetreat == false)
+            {
+                // Environmental/inescapable challenge — player must retry (or manually retreat)
+                PushStatus($"The challenge holds you — try again or retreat!");
+                _challengeResolved = false;
+                _challengeSuccess = false;
+                _challengeResultMsg = "";
+                _riddleAnswer = "";
+                return; // keep _activeChallenge alive
+            }
+            // Retreatable challenge — player is held back
             if (_pendingMoveTo.HasValue)
             {
                 var tile = GetDisplayTile(_pendingMoveTo.Value.Item1, _pendingMoveTo.Value.Item2);
@@ -1681,11 +1797,18 @@ else if (_gameState == GameState.Playing && _character != null)
             baseDamage = GetBowDamage();
             attackDesc = "fire an arrow";
         }
+        else if (type == "magic")
+        {
+            attackStat = _character.Magic;
+            defenderStat = _currentEnemy.DefenseStat;
+            baseDamage = _character.Magic;
+            attackDesc = "cast a spell";
+        }
         else
         {
             attackStat = _character.Strength;
             defenderStat = _currentEnemy.DefenseStat;
-            baseDamage = GetMeleeWeaponDamage() + (_character.Strength / 2);
+            baseDamage = GetMeleeWeaponDamage();
             attackDesc = $"swing your {GetMeleeWeaponName().ToLower()}";
         }
 
@@ -1694,7 +1817,9 @@ else if (_gameState == GameState.Playing && _character != null)
 
         if (atkRoll >= defRoll)
         {
-            var dmg = Math.Max(1, baseDamage - _currentEnemy.Armor);
+            var dmg = type == "magic"
+                ? Math.Max(1, baseDamage)
+                : Math.Max(1, baseDamage - _currentEnemy.Armor);
             _currentEnemy.Hp -= dmg;
             _combatLog.Insert(0, $"You {attackDesc}: {dmg} dmg ({atkRoll} vs {defRoll})");
 
@@ -1703,18 +1828,7 @@ else if (_gameState == GameState.Playing && _character != null)
                 _combatOver = true;
                 _combatWon = true;
                 _combatResultMsg = $"VICTORY! {_currentEnemy.Name} defeated!";
-                if (_currentEnemy.LootName != null && _inventory.Count < 10
-                    && !_inventory.Any(i => i.Name == _currentEnemy.LootName))
-                {
-                    _inventory.Add(new InventoryItem(_currentEnemy.LootName, _currentEnemy.LootIcon ?? "circle-plus",
-                        _currentEnemy.LootDamage, _currentEnemy.LootTooltip));
-                    _combatLog.Insert(0, $"Loot: {_currentEnemy.LootName}!");
-                }
-                if (_rng.Next(3) == 0 && _inventory.Count < 10)
-                {
-                    _inventory.Add(new InventoryItem("Gem", "gem", 0, "Gem — Precious stone, needed for tolls"));
-                    _combatLog.Insert(0, "Loot: Gem!");
-                }
+                HandleCombatVictoryLoot();
                 return;
             }
         }
@@ -1723,7 +1837,11 @@ else if (_gameState == GameState.Playing && _character != null)
             _combatLog.Insert(0, $"You {attackDesc} but miss ({atkRoll} vs {defRoll})");
         }
 
-        EnemyAttack();
+        // Speed initiative: if player Speed >= enemy AttackStat, skip counter-attack this turn
+        if (_character.Speed >= (_currentEnemy?.AttackStat ?? 0))
+            _combatLog.Insert(0, "Your speed lets you act before the enemy!");
+        else
+            EnemyAttack();
     }
 
     private void UseHealingPotion()
@@ -1733,7 +1851,8 @@ else if (_gameState == GameState.Playing && _character != null)
         if (potion == null) return;
 
         _inventory.Remove(potion);
-        var healed = Math.Min(5, _playerMaxHp - _playerHp);
+        var healAmount = 5 + (_character!.Health / 2);
+        var healed = Math.Min(healAmount, _playerMaxHp - _playerHp);
         _playerHp += healed;
         _combatLog.Insert(0, $"You drink a Healing Potion and recover {healed} HP.");
 
@@ -1800,6 +1919,12 @@ else if (_gameState == GameState.Playing && _character != null)
     {
         if (_combatWon && _pendingMoveTo.HasValue)
         {
+            var combatXp = _currentEnemy?.Name switch {
+                "Goblin Archer" or "Giant Spider" => 20,
+                "Dire Wolf"     or "Wild Boar"    => 30,
+                _ => 15
+            };
+            AwardXp(combatXp);
             var (tx, ty) = _pendingMoveTo.Value;
             var tile = GetOrGenerateTile(tx, ty);
             tile.ChallengeCleared = true;
@@ -1841,6 +1966,60 @@ else if (_gameState == GameState.Playing && _character != null)
         _gameState = GameState.CharSelect;
     }
 
+    // ── XP & leveling ────────────────────────────────────────────────────────
+    private void AwardXp(int amount)
+    {
+        if (_character == null) return;
+        _playerXp += amount;
+        _character.Experience = _playerXp;
+        PushStatus($"+{amount} XP ({_playerXp}/{_xpToNextLevel})");
+
+        if (_playerXp >= _xpToNextLevel)
+        {
+            _playerLevel++;
+            _character.Level = _playerLevel;
+            _playerXp -= _xpToNextLevel;
+            _xpToNextLevel = _playerLevel * 100;
+            _character.Experience = _playerXp;
+            _playerHp = _playerMaxHp;
+            _levelUpAlloc = _statNames.ToDictionary(s => s, _ => 0);
+            _levelUpPointsRemaining = 3;
+            _levelUpPending = true;
+            PushStatus($"⬆ LEVEL UP! You are now level {_playerLevel}!");
+        }
+    }
+
+    private void LevelUpIncrementStat(string stat)
+    {
+        if (_levelUpPointsRemaining > 0) { _levelUpAlloc[stat]++; _levelUpPointsRemaining--; }
+    }
+
+    private void LevelUpDecrementStat(string stat)
+    {
+        if (_levelUpAlloc[stat] > 0) { _levelUpAlloc[stat]--; _levelUpPointsRemaining++; }
+    }
+
+    private async Task ConfirmLevelUp()
+    {
+        if (_character == null || _levelUpPointsRemaining != 0) return;
+
+        _character.Speed     += _levelUpAlloc["Speed"];
+        _character.Strength  += _levelUpAlloc["Strength"];
+        _character.Smarts    += _levelUpAlloc["Smarts"];
+        _character.Agility   += _levelUpAlloc["Agility"];
+        _character.Toughness += _levelUpAlloc["Toughness"];
+        _character.Magic     += _levelUpAlloc["Magic"];
+        _character.Health    += _levelUpAlloc["Health"];
+
+        _playerMaxHp = _character.MaxHitPoints;
+        _playerHp = _playerMaxHp;
+
+        await CharacterService.UpdateCharacterAsync(_character);
+
+        _levelUpPending = false;
+        PushStatus("Stats increased! You are stronger now.");
+    }
+
     // ── Damage mitigation roll ───────────────────────────────────────────────
     private (bool avoided, string msg) TryMitigationRoll(string mitigStat, int dmg, string flavorText)
     {
@@ -1876,7 +2055,8 @@ else if (_gameState == GameState.Playing && _character != null)
         if (_activeCombat || _activeChallenge) return;
         if (item.Name == "Healing Potion")
         {
-            var healed = Math.Min(5, _playerMaxHp - _playerHp);
+            var healAmount = 5 + (_character!.Health / 2);
+            var healed = Math.Min(healAmount, _playerMaxHp - _playerHp);
             if (healed <= 0) { PushStatus("You are already at full health."); return; }
             _inventory.Remove(item);
             _playerHp += healed;
@@ -1887,9 +2067,138 @@ else if (_gameState == GameState.Playing && _character != null)
     private void Rest()
     {
         if (_activeCombat || _activeChallenge || _playerHp >= _playerMaxHp) return;
+        var food = _inventory.FirstOrDefault(i => i.Name == "Food");
+        if (food == null) { PushStatus("You have no food to rest with. Defeat creatures to find food."); return; }
+        _inventory.Remove(food);
         var healed = Math.Max(1, (_playerMaxHp - _playerHp) / 2);
         _playerHp = Math.Min(_playerMaxHp, _playerHp + healed);
-        PushStatus($"You rest and tend your wounds, recovering {healed} HP. ({_playerHp}/{_playerMaxHp})");
+        PushStatus($"You eat and rest, recovering {healed} HP. ({_playerHp}/{_playerMaxHp})");
+    }
+
+    // ── Spell scroll system ──────────────────────────────────────────────────
+    private static readonly (int Level, string Name, bool IsAttack, string? StatBonus)[] ScrollDefs =
+    [
+        (1, "Scroll of Spark",        true,  null),
+        (2, "Scroll of Frost",        true,  null),
+        (2, "Scroll of Clarity",      false, "Smarts"),
+        (3, "Scroll of Lightning",    true,  null),
+        (3, "Scroll of Swiftness",    false, "Agility"),
+        (4, "Scroll of Arcane Blast", true,  null),
+        (4, "Scroll of Endurance",    false, "Toughness"),
+        (5, "Scroll of Void Strike",  true,  null),
+        (5, "Scroll of Might",        false, "Strength"),
+        (6, "Scroll of Annihilate",   true,  null),
+    ];
+
+    private InventoryItem? GenerateScrollLoot(int minLevel = 1, int maxLevel = 6)
+    {
+        var available = ScrollDefs
+            .Where(s => s.Level >= minLevel && s.Level <= maxLevel && !_inventory.Any(i => i.Name == s.Name))
+            .ToArray();
+        if (available.Length == 0)
+            available = ScrollDefs.Where(s => !_inventory.Any(i => i.Name == s.Name)).ToArray();
+        if (available.Length == 0) return null;
+
+        var def = available[_rng.Next(available.Length)];
+        var dmgDesc = def.Level switch {
+            1 => "1d6+Magic", 2 => "2d4+Magic", 3 => "2d6+Magic",
+            4 => "3d6+Magic", 5 => "4d6+Magic", _ => "5d6+Magic"
+        };
+        var tooltip = def.IsAttack
+            ? $"{def.Name} (Lvl {def.Level}) — Magical attack: {dmgDesc} dmg. Requires Magic ≥ {def.Level}. Reusable."
+            : $"{def.Name} (Lvl {def.Level}) — Grants +4 to {def.StatBonus} checks. Requires Magic ≥ {def.Level}. Reusable.";
+        return new InventoryItem(def.Name, "scroll", 0, tooltip, def.Level);
+    }
+
+    private List<InventoryItem> GetUsableAttackScrolls()
+    {
+        if (_character == null) return [];
+        return _inventory.Where(i => i.ScrollLevel > 0 && i.ScrollLevel <= _character.Magic
+            && ScrollDefs.Any(s => s.Name == i.Name && s.IsAttack)).ToList();
+    }
+
+    private List<InventoryItem> GetUsableStatScrolls(string statName)
+    {
+        if (_character == null) return [];
+        return _inventory.Where(i => i.ScrollLevel > 0 && i.ScrollLevel <= _character.Magic
+            && ScrollDefs.Any(s => s.Name == i.Name && !s.IsAttack && s.StatBonus == statName)).ToList();
+    }
+
+    private void UseScrollInCombat(InventoryItem scroll)
+    {
+        if (_currentEnemy == null || _character == null || _combatOver) return;
+
+        var (diceCount, diceSides) = scroll.ScrollLevel switch {
+            1 => (1, 6), 2 => (2, 4), 3 => (2, 6),
+            4 => (3, 6), 5 => (4, 6), _ => (5, 6)
+        };
+        var baseDmg = 0;
+        for (int d = 0; d < diceCount; d++) baseDmg += _rng.Next(1, diceSides + 1);
+        var totalDmg = baseDmg + _character.Magic;
+
+        _currentEnemy.Hp -= totalDmg;
+        _combatLog.Insert(0, $"You cast {scroll.Name}: {totalDmg} magic dmg! (scroll not consumed)");
+
+        if (_currentEnemy.Hp <= 0)
+        {
+            _combatOver = true;
+            _combatWon = true;
+            _combatResultMsg = $"VICTORY! {_currentEnemy.Name} defeated!";
+            HandleCombatVictoryLoot();
+            return;
+        }
+
+        EnemyAttack();
+    }
+
+    private void ActivateScrollBonus(InventoryItem scroll)
+    {
+        var def = ScrollDefs.FirstOrDefault(s => s.Name == scroll.Name);
+        if (def == default || def.StatBonus == null) return;
+        _scrollStatBonus = 4;
+        _scrollBonusStat = def.StatBonus;
+        PushStatus($"You ready the {scroll.Name} — +4 to {def.StatBonus} for your next roll!");
+    }
+
+    // ── Combat loot helper ───────────────────────────────────────────────────
+    private void HandleCombatVictoryLoot()
+    {
+        if (_currentEnemy == null) return;
+
+        // Primary enemy loot
+        if (_currentEnemy.LootName != null && _inventory.Count < 10
+            && !_inventory.Any(i => i.Name == _currentEnemy.LootName))
+        {
+            _inventory.Add(new InventoryItem(_currentEnemy.LootName, _currentEnemy.LootIcon ?? "circle-plus",
+                _currentEnemy.LootDamage, _currentEnemy.LootTooltip));
+            _combatLog.Insert(0, $"Loot: {_currentEnemy.LootName}!");
+        }
+
+        // Gem drop (1-in-3 chance)
+        if (_rng.Next(3) == 0 && _inventory.Count < 10)
+        {
+            _inventory.Add(new InventoryItem("Gem", "gem", 0, "Gem — Precious stone, needed for tolls"));
+            _combatLog.Insert(0, "Loot: Gem!");
+        }
+
+        // Food drops from edible animals or food-carrying enemies
+        if (_currentEnemy.Name is "Dire Wolf" or "Wild Boar" && _inventory.Count < 10)
+        {
+            _inventory.Add(new InventoryItem("Food", "apple", 0, "Food — Eat when resting to restore HP"));
+            _combatLog.Insert(0, "Loot: Food!");
+        }
+        else if (_currentEnemy.Name == "Goblin Archer" && _rng.Next(2) == 0 && _inventory.Count < 10)
+        {
+            _inventory.Add(new InventoryItem("Food", "apple", 0, "Food — Eat when resting to restore HP"));
+            _combatLog.Insert(0, "Loot: Food (stolen rations)!");
+        }
+
+        // Scroll drop (1-in-4 chance)
+        if (_rng.Next(4) == 0 && _inventory.Count < 10)
+        {
+            var scroll = GenerateScrollLoot();
+            if (scroll != null) { _inventory.Add(scroll); _combatLog.Insert(0, $"Loot: {scroll.Name}!"); }
+        }
     }
 
     // ── SVG icon helper ──────────────────────────────────────────────────────
@@ -1921,6 +2230,7 @@ else if (_gameState == GameState.Playing && _character != null)
             "gem"         => """<path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/>""",
             "bow"         => """<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/><path d="m5 9 3 3-3 3"/>""",
             "potion"      => """<path d="M10 2v4.5L6 12v6a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-6l-4-5.5V2"/><path d="M8.5 2h7"/><path d="M7 15h10"/>""",
+            "apple"       => """<path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4 4 0 0 0 18 5.36c-1.2 0-2.5.94-4 .94-1.5 0-2.8-.94-4-.94a4 4 0 0 0-3.97 4.48 4 4 0 0 0-.03.52C6 14 9 22 12 22"/><path d="M10 2c1 .5 2 1 3 1.5 1-.5 2-1 3-1.5"/>""",
             _             => """<circle cx="12" cy="12" r="10"/>"""
         };
         return (MarkupString)$"""<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide{cls}">{path}</svg>""";
