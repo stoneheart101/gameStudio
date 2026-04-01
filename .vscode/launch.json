@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch (web)",
+      "type": "node-terminal",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "command": "dotnet run --launch-profile http --project \"${workspaceFolder}/GameStudio.csproj\"",
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+      },
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  ]
+}

@@ -2,41 +2,44 @@
 @rendermode InteractiveServer
 @inject ScoreService ScoreService
 @inject UserSession UserSession
+@inject NavigationManager Navigation
 @implements IDisposable
 
 <PageTitle>Game Studio</PageTitle>
 
 <div class="home-page">
     <h1 class="retro-title-large">GAME STUDIO</h1>
-    <p class="retro-subtitle">- LEADERBOARD -</p>
+    <p class="retro-subtitle">- TOP SCORES BY GAME -</p>
 
-    @if (leaderboard == null)
+    @if (gameLeaderboards == null)
     {
         <div class="retro-loading">LOADING...</div>
     }
-    else if (leaderboard.Count == 0)
-    {
-        <div class="retro-empty">NO PLAYERS YET</div>
-    }
     else
     {
-        <div class="leaderboard-table">
-            <div class="lb-header" style="@ColStyle">
-                <div class="lb-rank">RANK</div>
-                <div class="lb-player">PLAYER</div>
+        <div class="games-grid mt-4">
+            <h2 class="retro-title">LEADERBOARDS</h2>
+            <div class="game-cards">
                 @foreach (var game in ScoreService.Games)
                 {
-                    var g = game;
-                    <div class="lb-score lb-score-header">
-                        <span>@g.ToUpper()</span>
-                        @if (_resetTarget == g)
+                    var scores = gameLeaderboards.GetValueOrDefault(game) ?? [];
+                    var gameName = FormatGameName(game);
+                    <div class="game-card" role="button" tabindex="0" @onclick="() => OpenGame(game)">
+                        <div class="game-card-icon">@GetGameIcon(game)</div>
+                        <div class="game-card-name">@gameName.ToUpper()</div>
+                        <div class="game-card-desc">@GetGameDescription(game)</div>
+                        @if (_resetTarget == game)
                         {
                             <div class="reset-card-prompt">
                                 <input class="reset-pw-input reset-pw-inline" type="password" placeholder="PW"
                                        @bind="_resetPassword" @bind:event="oninput"
                                        @onkeydown="@(async e => { if (e.Key == "Enter") await ConfirmReset(); })" />
-                                <button class="retro-btn retro-btn-danger retro-btn-sm" @onclick="ConfirmReset">OK</button>
-                                <button class="retro-btn retro-btn-sm" @onclick="CancelReset">X</button>
+                                <button class="retro-btn retro-btn-danger retro-btn-sm"
+                                        @onclick:stopPropagation="true"
+                                        @onclick="ConfirmReset">OK</button>
+                                <button class="retro-btn retro-btn-sm"
+                                        @onclick:stopPropagation="true"
+                                        @onclick="CancelReset">X</button>
                             </div>
                             @if (_resetError != "")
                             {
@@ -45,95 +48,38 @@
                         }
                         else
                         {
-                            <button class="retro-btn retro-btn-danger retro-btn-sm" @onclick="() => StartReset(g)">RESET</button>
+                            <button class="retro-btn retro-btn-danger retro-btn-sm"
+                                    @onclick:stopPropagation="true"
+                                    @onclick="() => StartReset(game)">CLEAR</button>
+                        }
+                        @if (scores.Count == 0)
+                        {
+                            <div class="retro-empty">NO SCORES YET</div>
+                        }
+                        else
+                        {
+                            @for (var i = 0; i < scores.Count; i++)
+                            {
+                                var entry = scores[i];
+                                var isCurrent = UserSession.CurrentUser?.Id == entry.UserId;
+                                <div class="mini-score-row @(isCurrent ? "current-player" : "")">
+                                    <span class="score-value">#@(i + 1) @entry.Score</span>
+                                    <span class="lb-player">
+                                        @entry.User.AvatarEmoji @entry.User.Name @(isCurrent ? "(YOU)" : "")
+                                    </span>
+                                    <span class="score-date">@entry.PlayedAt.ToLocalTime().ToString("MM/dd/yy HH:mm")</span>
+                                </div>
+                            }
                         }
                     </div>
                 }
             </div>
-            @for (var i = 0; i < Sorted.Count; i++)
-            {
-                var row = Sorted[i];
-                var rank = i + 1;
-                var isCurrent = UserSession.CurrentUser?.Id == row.User.Id;
-                var totalScore = ScoreService.Games.Sum(g => row.Scores.GetValueOrDefault(g)?.Score ?? 0);
-                var isTop = rank == 1 && totalScore > 0;
-                <div class="lb-row @(isCurrent ? "current-player" : "") @(isTop ? "top-player" : "")"
-                     style="@ColStyle">
-                    <div class="lb-rank">
-                        @if (isTop) { <span class="trophy">👑</span> }
-                        else { <span>#@rank</span> }
-                    </div>
-                    <div class="lb-player">
-                        <span class="lb-avatar">@row.User.AvatarEmoji</span>
-                        <span class="lb-name">@row.User.Name @(isCurrent ? "(YOU)" : "")</span>
-                    </div>
-                    @foreach (var game in ScoreService.Games)
-                    {
-                        var entry = row.Scores.GetValueOrDefault(game);
-                        <div class="lb-score">
-                            @if (entry != null)
-                            {
-                                <span class="score-value">@entry.Score</span>
-                                <span class="score-date">@entry.PlayedAt.ToLocalTime().ToString("MM/dd/yy")</span>
-                            }
-                            else
-                            {
-                                <span class="score-empty">---</span>
-                            }
-                        </div>
-                    }
-                </div>
-            }
         </div>
     }
-
-    <div class="games-grid mt-4">
-        <h2 class="retro-title">GAMES</h2>
-        <div class="game-cards">
-            <a href="/flappy" class="game-card">
-                <div class="game-card-icon">🐦</div>
-                <div class="game-card-name">FLAPPY</div>
-                <div class="game-card-desc">DODGE THE PIPES</div>
-            </a>
-            <a href="/dodge" class="game-card">
-                <div class="game-card-icon">🐱</div>
-                <div class="game-card-name">DODGE DASH</div>
-                <div class="game-card-desc">RUN THE TRAIL</div>
-            </a>
-            <a href="/umm-food" class="game-card">
-                <div class="game-card-icon">🤿</div>
-                <div class="game-card-name">UMM FOOD</div>
-                <div class="game-card-desc">SURVIVE THE WHALES</div>
-            </a>
-            <a href="/explorer" class="game-card">
-                <div class="game-card-icon">🧭</div>
-                <div class="game-card-name">EXPLORER</div>
-                <div class="game-card-desc">EXPLORE THE UNKNOWN</div>
-            </a>
-            <a href="/cow-coral" class="game-card">
-                <div class="game-card-icon">🐎</div>
-                <div class="game-card-name">COW CORAL</div>
-                <div class="game-card-desc">CORAL THE COWS</div>
-            </a>
-            <a href="/forward" class="game-card">
-                <div class="game-card-icon">&#9876;</div>
-                <div class="game-card-name">FORWARD</div>
-                <div class="game-card-desc">VENTURE INTO THE UNKNOWN</div>
-            </a>
-        </div>
-    </div>
 </div>
 
 @code {
-    private List<(User User, Dictionary<string, ScoreEntry?> Scores)>? leaderboard;
-
-    private string ColStyle =>
-        $"grid-template-columns: 60px 1fr {string.Join(" ", ScoreService.Games.Select(_ => "130px"))};";
-
-    private List<(User User, Dictionary<string, ScoreEntry?> Scores)> Sorted =>
-        leaderboard?.OrderByDescending(r =>
-            ScoreService.Games.Sum(g => r.Scores.GetValueOrDefault(g)?.Score ?? 0)
-        ).ToList() ?? [];
+    private Dictionary<string, List<ScoreEntry>>? gameLeaderboards;
 
     protected override void OnInitialized()
     {
@@ -153,7 +99,54 @@
 
     private async Task LoadData()
     {
-        leaderboard = await ScoreService.GetLeaderboardAsync();
+        gameLeaderboards = await ScoreService.GetTopScoresByGameAsync(3);
+    }
+
+    private static string FormatGameName(string game) =>
+        game switch
+        {
+            "UmmFood" => "Umm Food",
+            "CowCoral" => "Cow Coral",
+            _ => game
+        };
+
+    private static string GetGameIcon(string game) =>
+        game switch
+        {
+            "Flappy" => "🐦",
+            "Dodge" => "🐱",
+            "UmmFood" => "🤿",
+            "Explorer" => "🧭",
+            "CowCoral" => "🐎",
+            "Forward" => "☠",
+            _ => "🎮"
+        };
+
+    private static string GetGameDescription(string game) =>
+        game switch
+        {
+            "Flappy" => "DODGE THE PIPES",
+            "Dodge" => "RUN THE TRAIL",
+            "UmmFood" => "SURVIVE THE WHALES",
+            "Explorer" => "EXPLORE THE UNKNOWN",
+            "CowCoral" => "CORAL THE COWS",
+            "Forward" => "VENTURE INTO THE UNKNOWN",
+            _ => "PLAY NOW"
+        };
+
+    private void OpenGame(string game)
+    {
+        var route = game switch
+        {
+            "Flappy" => "/flappy",
+            "Dodge" => "/dodge",
+            "UmmFood" => "/umm-food",
+            "Explorer" => "/explorer",
+            "CowCoral" => "/cow-coral",
+            "Forward" => "/forward",
+            _ => "/"
+        };
+        Navigation.NavigateTo(route);
     }
 
     private string? _resetTarget;

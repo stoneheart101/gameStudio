@@ -55,4 +55,24 @@ public class ScoreService(AppDbContext db)
 
         return result;
     }
+
+    public async Task<Dictionary<string, List<ScoreEntry>>> GetTopScoresByGameAsync(int topCount = 3)
+    {
+        var result = new Dictionary<string, List<ScoreEntry>>();
+
+        foreach (var game in Games)
+        {
+            var topScores = await db.Scores
+                .Include(s => s.User)
+                .Where(s => s.GameName == game)
+                .OrderByDescending(s => s.Score)
+                .ThenByDescending(s => s.PlayedAt)
+                .Take(topCount)
+                .ToListAsync();
+
+            result[game] = topScores;
+        }
+
+        return result;
+    }
 }

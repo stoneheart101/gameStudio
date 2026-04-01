@@ -33,4 +33,19 @@ public class UserService(AppDbContext db)
         user.LastVisit = DateTime.UtcNow;
         await db.SaveChangesAsync();
     }
+
+    public async Task<bool> DeleteUserAsync(int userId)
+    {
+        var user = await db.Users.FindAsync(userId);
+        if (user is null) return false;
+
+        var scores = await db.Scores.Where(s => s.UserId == userId).ToListAsync();
+        var characters = await db.Characters.Where(c => c.UserId == userId).ToListAsync();
+
+        db.Scores.RemoveRange(scores);
+        db.Characters.RemoveRange(characters);
+        db.Users.Remove(user);
+        await db.SaveChangesAsync();
+        return true;
+    }
 }

@@ -16,11 +16,31 @@
                     @foreach (var user in allUsers)
                     {
                         var u = user;
-                        <button class="user-select-btn @(UserSession.CurrentUser?.Id == u.Id ? "active" : "")"
-                                @onclick="() => SelectUser(u)">
-                            <span class="user-avatar">@u.AvatarEmoji</span>
-                            <span class="user-name">@u.Name</span>
-                        </button>
+                        <div class="user-row">
+                            <button class="user-select-btn @(UserSession.CurrentUser?.Id == u.Id ? "active" : "")"
+                                    @onclick="() => SelectUser(u)">
+                                <span class="user-avatar">@u.AvatarEmoji</span>
+                                <span class="user-name">@u.Name</span>
+                            </button>
+                            @if (deleteTargetUserId == u.Id)
+                            {
+                                <div class="reset-card-prompt">
+                                    <input class="reset-pw-input reset-pw-inline" type="password" placeholder="PW"
+                                           @bind="deletePassword" @bind:event="oninput"
+                                           @onkeydown="@(async e => { if (e.Key == "Enter") await ConfirmDeleteUser(u); })" />
+                                    <button class="retro-btn retro-btn-danger retro-btn-sm" @onclick="() => ConfirmDeleteUser(u)">DEL</button>
+                                    <button class="retro-btn retro-btn-sm" @onclick="CancelDelete">X</button>
+                                </div>
+                                @if (deleteError != "")
+                                {
+                                    <div class="reset-error">@deleteError</div>
+                                }
+                            }
+                            else
+                            {
+                                <button class="retro-btn retro-btn-danger retro-btn-sm" @onclick="() => StartDelete(u.Id)">DELETE</button>
+                            }
+                        </div>
                     }
                 </div>
                 <button class="retro-btn mt-3" @onclick="GoToCreate">+ NEW PLAYER</button>
@@ -88,6 +108,9 @@
     private string newAvatar = "🦊";
     private string createError = "";
     private bool initialized = false;
+    private int? deleteTargetUserId;
+    private string deletePassword = "";
+    private string deleteError = "";
 
     protected override void OnInitialized()
     {
@@ -114,14 +137,24 @@
             }
         }
 
-        isFirstUser = true;
-        overlayState = "create";
+        allUsers = await UserService.GetAllUsersAsync();
+        if (allUsers.Count > 0)
+        {
+            isFirstUser = false;
+            overlayState = "select";
+        }
+        else
+        {
+            isFirstUser = true;
+            overlayState = "create";
+        }
         StateHasChanged();
     }
 
     private async Task ShowSelect()
     {
         allUsers = await UserService.GetAllUsersAsync();
+        CancelDelete();
         overlayState = "select";
     }
 
@@ -130,6 +163,7 @@
         newName = "";
         newAvatar = "🦊";
         createError = "";
+        CancelDelete();
         isFirstUser = false;
         overlayState = "create";
     }
@@ -140,6 +174,7 @@
         user.LastVisit = DateTime.UtcNow;
         UserSession.SetUser(user);
         await JS.InvokeVoidAsync("localStorage.setItem", "userId", user.Id.ToString());
+        CancelDelete();
         overlayState = "none";
     }
 
@@ -150,7 +185,58 @@
         var user = await UserService.CreateUserAsync(newName, newAvatar);
         UserSession.SetUser(user);
         await JS.InvokeVoidAsync("localStorage.setItem", "userId", user.Id.ToString());
+        CancelDelete();
         overlayState = "none";
+    }
+
+    private void StartDelete(int userId)
+    {
+        deleteTargetUserId = userId;
+        deletePassword = "";
+        deleteError = "";
+    }
+
+    private void CancelDelete()
+    {
+        deleteTargetUserId = null;
+        deletePassword = "";
+        deleteError = "";
+    }
+
+    private async Task ConfirmDeleteUser(User user)
+    {
+        if (deletePassword != "dungeon")
+        {
+            deleteError = "WRONG PASSWORD";
+            deletePassword = "";
+            return;
+        }
+
+        var deleted = await UserService.DeleteUserAsync(user.Id);
+        if (!deleted)
+        {
+            deleteError = "DELETE FAILED";
+            return;
+        }
+
+        if (UserSession.CurrentUser?.Id == user.Id)
+        {
+            UserSession.SetUser(null);
+            await JS.InvokeVoidAsync("localStorage.removeItem", "userId");
+        }
+
+        allUsers = await UserService.GetAllUsersAsync();
+        CancelDelete();
+
+        if (allUsers.Count == 0)
+        {
+            isFirstUser = true;
+            overlayState = "create";
+        }
+        else
+        {
+            overlayState = "select";
+        }
     }
 
     public void Dispose()
