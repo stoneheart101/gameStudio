@@ -2175,6 +2175,8 @@ body:has(.explorer-container) .player-badge {
     position: relative;
     box-shadow: 2px 2px 0 #080604;
     cursor: default;
+    border-radius: 8px;
+    overflow: hidden;
 }
 /* Inner room line — gives a "thick hand-drawn wall" look */
 .fw-map-rect::after {
@@ -2183,6 +2185,7 @@ body:has(.explorer-container) .player-badge {
     inset: 3px;
     border: 1px solid rgba(200, 185, 154, 0.18);
     pointer-events: none;
+    border-radius: 5px;
 }
 /* Player's current position */
 .fw-map-rect.is-player {
@@ -2616,8 +2619,8 @@ body:has(.forward-page) .player-badge { display: none; }
     filter: none;
 }
 .fw-map-icon svg {
-    width: 28px;
-    height: 28px;
+    width: 40px;
+    height: 40px;
     display: block;
 }
 
