@@ -2166,7 +2166,23 @@ body:has(.explorer-container) .player-badge {
     to   { transform: translateY(0); }
 }
 .fw-map-area.is-sliding {
-    animation: fw-map-slide-in 0.32s ease-out;
+    animation: fw-map-slide-in 0.34s ease-out;
+}
+@keyframes fw-map-depart {
+    0%   { transform: translateY(0);    opacity: 1; }
+    100% { transform: translateY(60px); opacity: 0; }
+}
+.fw-map-rect.is-departing {
+    animation: fw-map-depart 0.34s ease-in forwards;
+    pointer-events: none;
+}
+@keyframes fw-map-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+/* New-visible slots fade in after the slide animation finishes */
+.fw-map-rect.is-new-visible {
+    animation: fw-map-fade-in 0.5s ease-in 0.38s both;
 }
 
 .fw-map-rect {
@@ -2462,11 +2478,19 @@ body:has(.forward-page) .player-badge { display: none; }
     color: #e5d5b8;
 }
 
+/* Bottom content row: area body + journal */
+.fw-bottom-content {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    min-height: 0;
+    position: relative;
+    z-index: 1;
+}
+
 /* Area body (main interaction area) */
 .fw-area-body {
     flex: 1;
-    position: relative;
-    z-index: 1;
     padding: 14px 16px;
     overflow-y: auto;
 }
@@ -2893,4 +2917,261 @@ body:has(.forward-page) .player-badge { display: none; }
 @media (max-width: 900px) {
     .fw-map-area { gap: 3px; padding: 4px 6px; }
     .fw-char-name { font-size: 15px; }
+}
+
+/* ── Downtime indicator on map rect ─────────────────────────────────── */
+.fw-map-rect.has-downtime {
+    box-shadow: inset 0 0 8px 3px rgba(100, 180, 255, 0.35), 2px 2px 0 #080604;
+}
+.fw-map-rect.has-downtime::before {
+    content: '⌂';
+    position: absolute;
+    top: 2px;
+    right: 4px;
+    font-size: 9px;
+    color: #80c0ff;
+    opacity: 0.8;
+    z-index: 2;
+}
+
+/* ── Health block in character panel ────────────────────────────────── */
+.fw-health-block {
+    width: 100%;
+    padding: 4px 4px 2px;
+    border-bottom: 1px solid #2a2010;
+}
+.fw-health-row {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-bottom: 3px;
+}
+.fw-pip {
+    font-size: 14px;
+    opacity: 0.2;
+    transition: none;
+}
+.fw-pip.is-filled {
+    opacity: 1;
+}
+.fw-pip-wound.is-filled {
+    color: #d04040;
+}
+.fw-pip-scratch.is-filled {
+    color: #d09040;
+    font-size: 18px;
+    line-height: 1;
+}
+.fw-health-lbl {
+    font-size: 9px;
+    color: #5a5040;
+    letter-spacing: 1px;
+    margin-left: 4px;
+}
+
+/* ── Healing potion button ───────────────────────────────────────────── */
+.fw-btn-potion {
+    width: calc(100% - 8px);
+    margin: 4px;
+    font-size: 11px;
+    padding: 4px 8px;
+    border-color: #a84040;
+    color: #e88080;
+}
+.fw-btn-potion:hover {
+    background: #a84040;
+    color: #fff;
+    border-color: #a84040;
+}
+
+/* ── Resources block ─────────────────────────────────────────────────── */
+.fw-resources-block {
+    display: flex;
+    gap: 6px;
+    padding: 4px;
+    border-bottom: 1px solid #2a2010;
+}
+.fw-res-item {
+    font-size: 12px;
+    color: #9a8a6a;
+    letter-spacing: 0.5px;
+}
+
+/* ── Item wear bar ───────────────────────────────────────────────────── */
+.fw-wear-bar {
+    position: absolute;
+    bottom: 2px;
+    left: 3px;
+    right: 3px;
+    height: 3px;
+    background: #1a1408;
+    border: 1px solid #3a2a10;
+    overflow: hidden;
+}
+.fw-wear-fill {
+    height: 100%;
+    background: #c85020;
+}
+.fw-inv-slot {
+    position: relative; /* needed for wear bar absolute positioning */
+}
+
+/* ── Journal ─────────────────────────────────────────────────────────── */
+.fw-journal {
+    width: 190px;
+    flex-shrink: 0;
+    border-left: 2px solid #2e2518;
+    padding: 8px 10px;
+    overflow-y: auto;
+    background: rgba(8, 6, 4, 0.9);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.fw-journal-label {
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: #c8a86b;
+    text-transform: uppercase;
+    border-bottom: 1px solid #2e2518;
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+.fw-journal-empty {
+    font-size: 11px;
+    color: #3a3020;
+    font-style: italic;
+}
+.fw-journal-entry {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 3px 4px;
+    border: 1px solid #2a2010;
+    font-size: 10px;
+}
+.fw-journal-type {
+    font-size: 9px;
+    color: #5a5040;
+    letter-spacing: 1px;
+}
+.fw-journal-title {
+    color: #9a8a6a;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 10px;
+}
+.fw-jq-active {
+    border-color: #c8a86b;
+}
+.fw-jq-active .fw-journal-title { color: #e5d5b8; }
+.fw-jq-done {
+    border-color: #2a5a20;
+    opacity: 0.8;
+}
+.fw-jq-done .fw-journal-title { color: #6a9a50; }
+.fw-jq-failed {
+    border-color: #4a2020;
+    opacity: 0.7;
+}
+.fw-jq-failed .fw-journal-title { color: #8a4040; }
+.fw-qt-find  { color: #6ab0e0; }
+.fw-qt-slay  { color: #e06060; }
+.fw-qt-reach { color: #a0c860; }
+.fw-qt-done  { color: #6a9a50; }
+.fw-qt-fail  { color: #8a4040; }
+.fw-journal-toggle {
+    background: none;
+    border: none;
+    border-top: 1px solid #2e2518;
+    color: #5a5040;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    padding: 4px 0;
+    text-align: left;
+    width: 100%;
+    margin-top: 4px;
+}
+.fw-journal-toggle:hover { color: #c8a86b; }
+
+/* ── Skill buttons in area body ──────────────────────────────────────── */
+.fw-skill-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+.fw-skill-btn {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-color: #5a8a50;
+    color: #8ac870;
+}
+.fw-skill-btn:hover {
+    background: #3a5a30;
+    color: #c8f8a0;
+    border-color: #8ac870;
+}
+
+/* ── Skill result message ────────────────────────────────────────────── */
+.fw-skill-result {
+    margin-top: 8px;
+    padding: 5px 8px;
+    background: #0a0a06;
+    border: 1px solid #3a5a20;
+    font-size: 11px;
+    color: #8ac860;
+    letter-spacing: 0.5px;
+    line-height: 1.5;
+}
+
+/* ── Skill check box ─────────────────────────────────────────────────── */
+.fw-skill-check-box {
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border: 2px solid #8a5a20;
+    background: #0a0806;
+}
+.fw-skill-check-title {
+    font-size: 13px;
+    color: #e8a840;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+}
+.fw-skill-check-desc {
+    font-size: 11px;
+    color: #9a8060;
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+.fw-skill-check-btns {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+/* ── Downtime indicator in area body ────────────────────────────────── */
+.fw-downtime-indicator {
+    margin-top: 6px;
+    padding: 4px 8px;
+    border: 1px solid #2a5a8a;
+    background: #060c10;
+    font-size: 11px;
+    color: #6090c0;
+    letter-spacing: 1px;
+}
+.fw-btn-downtime {
+    margin-top: 4px;
+    border-color: #3060a0;
+    color: #80b0e0;
+    font-size: 11px;
+}
+.fw-btn-downtime:hover {
+    background: #1a3060;
+    color: #c0d8f8;
+    border-color: #6090c0;
 }
