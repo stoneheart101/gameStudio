@@ -2160,20 +2160,24 @@ body:has(.explorer-container) .player-badge {
     gap: 4px;
     padding: 6px 8px;
     min-height: 0;
+    overflow: hidden;
 }
-@keyframes fw-map-slide-in {
-    from { transform: translateY(-33.33%); }
+/* Each visible rect slides down into its new row position (100% ≈ one row height).
+   70ms delay (both fill-mode) lets the departing row clear before arriving. */
+@keyframes fw-map-slide-down-in {
+    from { transform: translateY(-100%); }
     to   { transform: translateY(0); }
 }
-.fw-map-area.is-sliding {
-    animation: fw-map-slide-in 0.34s ease-out;
+.fw-map-rect.is-slide-down {
+    animation: fw-map-slide-down-in 0.36s ease-out 0.07s both;
 }
+/* Bottom row departs: slides down off the grid and fades */
 @keyframes fw-map-depart {
-    0%   { transform: translateY(0);    opacity: 1; }
-    100% { transform: translateY(60px); opacity: 0; }
+    0%   { transform: translateY(0);     opacity: 1; }
+    100% { transform: translateY(110%);  opacity: 0; }
 }
 .fw-map-rect.is-departing {
-    animation: fw-map-depart 0.34s ease-in forwards;
+    animation: fw-map-depart 0.30s ease-in forwards;
     pointer-events: none;
 }
 @keyframes fw-map-fade-in {
@@ -3174,4 +3178,45 @@ body:has(.forward-page) .player-badge { display: none; }
     background: #1a3060;
     color: #c0d8f8;
     border-color: #6090c0;
+}
+
+/* ── Inventory hover action buttons (Drink / Drop) ──────────────────── */
+.fw-inv-action {
+    display: none;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: #111;
+    border: 1px solid #7a6a50;
+    color: #c8a86b;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 9px;
+    letter-spacing: 1px;
+    padding: 2px 5px;
+    cursor: pointer;
+    white-space: nowrap;
+    text-transform: uppercase;
+    box-shadow: 1px 1px 0 #080604;
+}
+.fw-inv-slot.has-item:hover .fw-inv-action {
+    display: block;
+}
+.fw-inv-drink {
+    top: 3px;
+    border-color: #a84040;
+    color: #e08080;
+}
+.fw-inv-drink:hover {
+    background: #5a1818;
+    color: #ffa0a0;
+}
+.fw-inv-drop {
+    bottom: 10px;
+    border-color: #3a4a2a;
+    color: #7a8a6a;
+}
+.fw-inv-drop:hover {
+    background: #1a2010;
+    color: #a0b880;
 }
